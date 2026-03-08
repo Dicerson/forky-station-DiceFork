@@ -1,0 +1,113 @@
+﻿using Content.Server._Funkystation.SM.Components;
+using Content.Server.Atmos.Components;
+using Content.Server.Atmos.EntitySystems;
+using Content.Shared.Atmos;
+using Content.Shared.Atmos.Components;
+using Robust.Server.GameObjects;
+using Robust.Shared.Map;
+
+namespace Content.Server._Funkystation.SM.EntitySystems;
+
+public sealed class SupermatterSystem : EntitySystem
+{
+    [Dependency] private readonly AtmosphereSystem _atmosphereSystem = default!;
+    [Dependency] private readonly IMapManager _mapManager = default!;
+    [Dependency] private readonly MapSystem _mapSystem = default!;
+    [Dependency] private readonly TransformSystem _xformSystem = default!;
+
+    public override void Initialize()
+    {
+        base.Initialize();
+    }
+
+    public override void Update(float frameTime)
+    {
+        base.Update(frameTime);
+        // Iterate over all entities with a SupermatterComponent
+        var query = EntityQueryEnumerator<SupermatterComponent>();
+
+        while (query.MoveNext(out var uid, out var sm))
+        {
+            ProcessSupermatter(uid, sm, frameTime);
+        }
+    }
+
+    /// <summary>
+    /// Process logic for each supermatter.
+    /// </summary>
+    /// <param name="uid"></param>
+    /// <param name="sm"></param>
+    /// <param name="frameTime"></param>
+    private void ProcessSupermatter(EntityUid uid, SupermatterComponent sm, float frameTime)
+    {
+        AbsorbGas(uid, sm);
+        // …rest of the tick logic
+    }
+
+    /// <summary>
+    /// Absorbs gas in a 3 x 3 area with the Supermatter at the center
+    /// </summary>
+    /// <param name="smUid"></param>
+    /// <param name="sm"></param>
+    private void AbsorbGas(EntityUid smUid, SupermatterComponent sm)
+    {
+        var xform = Transform(smUid);
+
+
+        var mapUid = xform.MapUid;
+        var mapCoords = _xformSystem.GetMapCoordinates(smUid);
+        if (!_mapManager.TryFindGridAt(mapCoords, out var gridUid, out var gridComp))
+            return; // In space
+
+        Entity<GridAtmosphereComponent?, GasTileOverlayComponent?>? gridEnt = null;
+        if (TryComp(gridUid, out GridAtmosphereComponent? gridAtmos))
+        {
+            TryComp(gridUid, out GasTileOverlayComponent? overlay);
+            gridEnt = new Entity<GridAtmosphereComponent?, GasTileOverlayComponent?>(
+                gridUid,
+                gridAtmos,
+                overlay
+            );
+        }
+
+        Entity<MapAtmosphereComponent?>? mapEnt = null;
+
+        if (mapUid is { } map && TryComp(map, out MapAtmosphereComponent? mapAtmos))
+        {
+            mapEnt = new Entity<MapAtmosphereComponent?>(map, mapAtmos);
+        }
+
+        if (gridEnt == null)
+            return;
+
+        var centerTile = _mapSystem.WorldToTile(gridUid, gridComp, mapCoords.Position);
+
+        for (var dx = -1; dx <= 1; dx++)
+        {
+            for (var dy = -1; dy <= 1; dy++)
+            {
+                var tile = centerTile + new Vector2i(dx, dy);
+
+                var mixture = _atmosphereSystem.GetTileMixture(
+                    gridEnt,
+                    mapEnt,
+                    tile,
+                    excite: false
+                );
+
+                if (mixture == null)
+                    continue;
+
+                var absorbed = mixture.RemoveRatio(0.05f);
+                for (var i = 0; i < Atmospherics.AdjustedNumberOfGases; i++)
+                {
+                    var amount = absorbed.GetMoles(i);
+                    sm.AbsorbedGas.AdjustMoles(i, amount);
+                }
+            }
+        }
+    }
+
+
+
+}
