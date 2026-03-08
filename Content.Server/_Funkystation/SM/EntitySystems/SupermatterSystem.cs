@@ -1,10 +1,12 @@
 ﻿using Content.Server._Funkystation.SM.Components;
 using Content.Server.Atmos.Components;
 using Content.Server.Atmos.EntitySystems;
+using Content.Shared._Funkystation.SM;
 using Content.Shared.Atmos;
 using Content.Shared.Atmos.Components;
 using Robust.Server.GameObjects;
 using Robust.Shared.Map;
+using Robust.Shared.Prototypes;
 
 namespace Content.Server._Funkystation.SM.EntitySystems;
 
@@ -13,11 +15,13 @@ public sealed class SupermatterSystem : EntitySystem
     [Dependency] private readonly AtmosphereSystem _atmosphereSystem = default!;
     [Dependency] private readonly IMapManager _mapManager = default!;
     [Dependency] private readonly MapSystem _mapSystem = default!;
+    [Dependency] private readonly IPrototypeManager _proto = default!;
     [Dependency] private readonly TransformSystem _xformSystem = default!;
 
     public override void Initialize()
     {
         base.Initialize();
+        GasCharacteristicData.LoadFromPrototypes(_proto);
     }
 
     public override void Update(float frameTime)
@@ -28,7 +32,7 @@ public sealed class SupermatterSystem : EntitySystem
 
         while (query.MoveNext(out var uid, out var sm))
         {
-            ProcessSupermatter(uid, sm, frameTime);
+            ProcessSupermatter(uid, ref sm, frameTime);
         }
     }
 
@@ -38,9 +42,10 @@ public sealed class SupermatterSystem : EntitySystem
     /// <param name="uid"></param>
     /// <param name="sm"></param>
     /// <param name="frameTime"></param>
-    private void ProcessSupermatter(EntityUid uid, SupermatterComponent sm, float frameTime)
+    private void ProcessSupermatter(EntityUid uid, ref SupermatterComponent sm, float frameTime)
     {
-        AbsorbGas(uid, sm);
+        AbsorbGas(uid, ref sm);
+        ComputeGasCharacteristics(ref sm);
         // …rest of the tick logic
     }
 
@@ -49,7 +54,7 @@ public sealed class SupermatterSystem : EntitySystem
     /// </summary>
     /// <param name="smUid"></param>
     /// <param name="sm"></param>
-    private void AbsorbGas(EntityUid smUid, SupermatterComponent sm)
+    private void AbsorbGas(EntityUid smUid, ref SupermatterComponent sm)
     {
         var xform = Transform(smUid);
 
@@ -107,6 +112,42 @@ public sealed class SupermatterSystem : EntitySystem
             }
         }
     }
+
+    /// <summary>
+    /// Computes the characteristics of the absorbed gas
+    /// </summary>
+    /// <param name="sm"></param>
+    private void ComputeGasCharacteristics(ref SupermatterComponent sm)
+    {
+        float stability = 0f;
+        float growth = 0f;
+        float conductivity = 0f;
+        float enthalpy = 0f;
+
+        for (var i = 0; i < Atmospherics.AdjustedNumberOfGases; i++)
+        {
+            var moles = sm.AbsorbedGas.GetMoles(i);
+            if (moles <= 0f)
+                continue;
+
+            var gas = (Gas)i;
+
+            if (!GasCharacteristicData.GasTable.TryGetValue(gas, out var ch))
+                continue;
+
+            stability    += moles * ch.Stability;
+            growth       += moles * ch.Growth;
+            conductivity += moles * ch.Conductivity;
+            enthalpy     += moles * ch.Enthalpy;
+        }
+
+        // Normalize as per your spec
+        sm.Stability    = stability / 100f;
+        sm.Growth       = growth / 100f;
+        sm.Conductivity = conductivity / 100f;
+        sm.Enthalpy     = enthalpy / 100f;
+    }
+
 
 
 
