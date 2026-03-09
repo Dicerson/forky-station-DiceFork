@@ -6,13 +6,13 @@ using Robust.Shared.Serialization;
 
 namespace Content.Server._Funkystation.SM.Components;
 
-[RegisterComponent]
+[RegisterComponent, NetworkedComponent]
 [Access(typeof(SupermatterSystem))]
 public sealed partial class SupermatterComponent : SharedSupermatterComponent
 {
     // --- Core State ---
     [DataField("power")]
-    public float Power = 0f;
+    public float Power;
     [DataField("integrity")]
     public float Integrity = 1000f;
 
@@ -20,29 +20,29 @@ public sealed partial class SupermatterComponent : SharedSupermatterComponent
     [DataField("stability")]
     public float Stability = 10f;
     [DataField("conductivity")]
-    public float Conductivity = 0f;
+    public float Conductivity;
     [DataField("enthalpy")]
-    public float Enthalpy = 0f;
+    public float Enthalpy;
     [DataField("growth")]
-    public float Growth = 0f;
+    public float Growth;
 
     // --- Internal Buffers ---
     [DataField("absorbedGas")]
-    public GasMixture AbsorbedGas = new();
+    public GasMixture AbsorbedGas;
     [DataField("reproduction")]
-    public float Reproduction = 0f;
+    public float Reproduction;
     [DataField("absorptionHealingPool")]
-    public float AbsorptionHealingPool = 0f;
+    public float AbsorptionHealingPool;
 
     // --- Lightning ---
     [DataField("lightningTimer")]
-    public float LightningTimer = 0f;
+    public float LightningTimer;
 
     // --- Cached Values for Visuals ---
     [DataField("lastTemperature")]
     public float LastTemperature = 293.15f;
     [DataField("lastMaxCharacteristic")]
-    public float LastMaxCharacteristic = 0f;
+    public float LastMaxCharacteristic;
     [DataField("visualState")]
     public SupermatterState VisualState = SupermatterState.Inactive;
 }

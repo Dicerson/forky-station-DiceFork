@@ -1,6 +1,7 @@
 ﻿using Content.Server._Funkystation.SM.Components;
 using Content.Server.Atmos.Components;
 using Content.Server.Atmos.EntitySystems;
+using Content.Server.Atmos.Piping.Components;
 using Content.Shared._Funkystation.SM;
 using Content.Shared.Atmos;
 using Content.Shared.Atmos.Components;
@@ -21,19 +22,13 @@ public sealed class SupermatterSystem : EntitySystem
     public override void Initialize()
     {
         base.Initialize();
+        SubscribeLocalEvent<SupermatterComponent, AtmosDeviceUpdateEvent>(OnProcessSupermatter);
         GasCharacteristicData.LoadFromPrototypes(_proto);
     }
 
     public override void Update(float frameTime)
     {
         base.Update(frameTime);
-        // Iterate over all entities with a SupermatterComponent
-        var query = EntityQueryEnumerator<SupermatterComponent>();
-
-        while (query.MoveNext(out var uid, out var sm))
-        {
-            ProcessSupermatter(uid, ref sm, frameTime);
-        }
     }
 
     /// <summary>
@@ -41,11 +36,11 @@ public sealed class SupermatterSystem : EntitySystem
     /// </summary>
     /// <param name="uid"></param>
     /// <param name="sm"></param>
-    /// <param name="frameTime"></param>
-    private void ProcessSupermatter(EntityUid uid, ref SupermatterComponent sm, float frameTime)
+    /// <param name="args"></param>
+    private void OnProcessSupermatter(EntityUid uid, SupermatterComponent sm, AtmosDeviceUpdateEvent args)
     {
-        AbsorbGas(uid, ref sm);
-        ComputeGasCharacteristics(ref sm);
+        AbsorbGas(uid, sm);
+        ComputeGasCharacteristics (sm);
         // …rest of the tick logic
     }
 
@@ -54,7 +49,7 @@ public sealed class SupermatterSystem : EntitySystem
     /// </summary>
     /// <param name="smUid"></param>
     /// <param name="sm"></param>
-    private void AbsorbGas(EntityUid smUid, ref SupermatterComponent sm)
+    private void AbsorbGas(EntityUid smUid, SupermatterComponent sm)
     {
         var xform = Transform(smUid);
 
@@ -117,7 +112,7 @@ public sealed class SupermatterSystem : EntitySystem
     /// Computes the characteristics of the absorbed gas
     /// </summary>
     /// <param name="sm"></param>
-    private void ComputeGasCharacteristics(ref SupermatterComponent sm)
+    private void ComputeGasCharacteristics(SupermatterComponent sm)
     {
         float stability = 0f;
         float growth = 0f;
