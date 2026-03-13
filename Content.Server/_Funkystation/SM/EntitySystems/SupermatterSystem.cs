@@ -17,7 +17,7 @@ public sealed class SupermatterSystem : EntitySystem
     [Dependency] private readonly IMapManager _mapManager = default!;
     [Dependency] private readonly MapSystem _mapSystem = default!;
     [Dependency] private readonly IPrototypeManager _proto = default!;
-    [Dependency] private readonly TransformSystem _xformSystem = default!;
+    [Dependency] private readonly TransformSystem _transformSystem = default!;
 
     public override void Initialize()
     {
@@ -39,7 +39,7 @@ public sealed class SupermatterSystem : EntitySystem
     /// <param name="args"></param>
     private void OnProcessSupermatter(EntityUid uid, SupermatterComponent sm, AtmosDeviceUpdateEvent args)
     {
-        AbsorbGas(uid, sm);
+        AbsorbGas(uid, sm, args);
         ComputeGasCharacteristics (sm);
         // …rest of the tick logic
     }
@@ -49,38 +49,13 @@ public sealed class SupermatterSystem : EntitySystem
     /// </summary>
     /// <param name="smUid"></param>
     /// <param name="sm"></param>
-    private void AbsorbGas(EntityUid smUid, SupermatterComponent sm)
+    /// <param name="args"></param>
+    private void AbsorbGas(EntityUid smUid, SupermatterComponent sm, AtmosDeviceUpdateEvent args)
     {
-        var xform = Transform(smUid);
-
-
-        var mapUid = xform.MapUid;
-        var mapCoords = _xformSystem.GetMapCoordinates(smUid);
-        if (!_mapManager.TryFindGridAt(mapCoords, out var gridUid, out var gridComp))
-            return; // In space
-
-        Entity<GridAtmosphereComponent?, GasTileOverlayComponent?>? gridEnt = null;
-        if (TryComp(gridUid, out GridAtmosphereComponent? gridAtmos))
-        {
-            TryComp(gridUid, out GasTileOverlayComponent? overlay);
-            gridEnt = new Entity<GridAtmosphereComponent?, GasTileOverlayComponent?>(
-                gridUid,
-                gridAtmos,
-                overlay
-            );
-        }
-
-        Entity<MapAtmosphereComponent?>? mapEnt = null;
-
-        if (mapUid is { } map && TryComp(map, out MapAtmosphereComponent? mapAtmos))
-        {
-            mapEnt = new Entity<MapAtmosphereComponent?>(map, mapAtmos);
-        }
-
-        if (gridEnt == null)
+        var ratio = 0.05f;
+        if (args.Grid is not {} grid)
             return;
-
-        var centerTile = _mapSystem.WorldToTile(gridUid, gridComp, mapCoords.Position);
+        var centerTile = _transformSystem.GetGridTilePositionOrDefault(smUid);
 
         for (var dx = -1; dx <= 1; dx++)
         {
@@ -88,17 +63,12 @@ public sealed class SupermatterSystem : EntitySystem
             {
                 var tile = centerTile + new Vector2i(dx, dy);
 
-                var mixture = _atmosphereSystem.GetTileMixture(
-                    gridEnt,
-                    mapEnt,
-                    tile,
-                    excite: false
-                );
+                var mixture = _atmosphereSystem.GetTileMixture(grid, args.Map, tile, excite: true);
 
                 if (mixture == null)
                     continue;
 
-                var absorbed = mixture.RemoveRatio(0.05f);
+                var absorbed = mixture.RemoveRatio(ratio);
                 for (var i = 0; i < Atmospherics.AdjustedNumberOfGases; i++)
                 {
                     var amount = absorbed.GetMoles(i);
