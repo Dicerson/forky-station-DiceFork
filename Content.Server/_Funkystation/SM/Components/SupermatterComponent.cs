@@ -15,12 +15,21 @@ public sealed partial class SupermatterComponent : SharedSupermatterComponent
     public float Power;
     [DataField("integrity")]
     public float Integrity = 1000f;
+    [DataField("maxIntegrity")]
+    public float MaxIntegrity = 1000f;
+    [DataField("vacuumDamagePerTile")]
+    public float VacuumDamagePerTile = 0.5f;
+    [DataField("absorptionHealing")]
+    public float AbsorptionHealing = 1f;
+
 
     // --- Gas Characteristics (calculated each tick) ---
     [DataField("stability")]
     public float Stability = 10f;
     [DataField("conductivity")]
     public float Conductivity;
+    [DataField("currentConductivity")]
+    public float CurrentConductivity;
     [DataField("enthalpy")]
     public float Enthalpy;
     [DataField("growth")]
@@ -31,8 +40,12 @@ public sealed partial class SupermatterComponent : SharedSupermatterComponent
     public GasMixture AbsorbedGas;
     [DataField("reproduction")]
     public float Reproduction;
+    [DataField("reproductionProgress")]
+    public float ReproductionProgress;
     [DataField("absorptionHealingPool")]
     public float AbsorptionHealingPool;
+    [DataField("countVacuumTiles")]
+    public int CountVacuumTiles;
 
     // --- Lightning ---
     [DataField("lightningTimer")]
