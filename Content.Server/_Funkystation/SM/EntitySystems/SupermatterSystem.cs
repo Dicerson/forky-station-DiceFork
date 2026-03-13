@@ -69,11 +69,13 @@ public sealed class SupermatterSystem : EntitySystem
                     continue;
 
                 var absorbed = mixture.RemoveRatio(ratio);
-                for (var i = 0; i < Atmospherics.AdjustedNumberOfGases; i++)
+                for (var gas = 0; gas < Atmospherics.AdjustedNumberOfGases; gas++)
                 {
-                    var amount = absorbed.GetMoles(i);
-                    sm.AbsorbedGas.AdjustMoles(i, amount);
+                    var amount = absorbed.GetMoles(gas);
+                    sm.AbsorbedGas.AdjustMoles(gas, amount);
+                    absorbed.SetMoles(gas, 0f);
                 }
+                _atmosphereSystem.Merge(mixture, absorbed);
             }
         }
     }
@@ -106,7 +108,6 @@ public sealed class SupermatterSystem : EntitySystem
             enthalpy     += moles * ch.Enthalpy;
         }
 
-        // Normalize as per your spec
         sm.Stability    = stability / 100f;
         sm.Growth       = growth / 100f;
         sm.Conductivity = conductivity / 100f;
