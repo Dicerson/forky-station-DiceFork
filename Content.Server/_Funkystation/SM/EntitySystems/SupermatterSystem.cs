@@ -175,6 +175,7 @@ public sealed class SupermatterSystem : EntitySystem
             enthalpy     += moles * ch.Enthalpy;
         }
 
+        // conversion to percentage
         sm.Stability    = stability / 100f;
         sm.Growth       = growth / 100f;
         sm.Conductivity = conductivity / 100f;
