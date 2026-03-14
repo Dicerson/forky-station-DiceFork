@@ -1,13 +1,13 @@
 ﻿
 
+using Content.Shared.Atmos;
 using Robust.Shared.Serialization;
 
 namespace Content.Shared._Funkystation.SM.Components;
 
-[Virtual]
 public abstract partial class SharedSupermatterComponent : Component
 {
-
+    public Dictionary<Gas, GasCharacteristics> GasTable = new();
 }
 [Serializable, NetSerializable]
 public enum SupermatterState : byte
@@ -18,5 +18,10 @@ public enum SupermatterState : byte
     Critical,
     Delaminating
 }
-
-
+[Serializable, NetSerializable]
+public readonly record struct GasCharacteristics(
+    float Stability,
+    float Growth,
+    float Conductivity,
+    float Enthalpy
+);

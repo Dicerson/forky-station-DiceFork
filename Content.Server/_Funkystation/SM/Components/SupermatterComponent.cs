@@ -27,6 +27,36 @@ public sealed partial class SupermatterComponent : SharedSupermatterComponent
     public float VacuumThreshold = 10f;
 
 
+    // --- Process values ---
+    [DataField("reproductionThreshold")]
+    public float ReproductionThreshold = 1000f;
+    [DataField("reproductionDecay")]
+    public float ReproductionDecay = 0.9f;
+    [DataField("powerDamageScale")]
+    public float PowerDamageScale = 500f;
+    [DataField("temperatureDamageScale")]
+    public float TemperatureDamageScale = 100f;
+    [DataField("absorptionHealingCost")]
+    public float AbsorptionHealingCost = 10f;
+    [DataField("growthAbsorptionScale")]
+    public float GrowthAbsorptionScale = 45f;
+    [DataField("powerPerGasPacket")]
+    public float PowerPerGasPacket = 3000f;
+    [DataField("neutralStability")]
+    public float NeutralStability = 10f;
+    [DataField("stabilityPowerDrainScale")]
+    public float StabilityPowerDrainScale = 0.08f;
+    [DataField("baseStability")]
+    public float BaseStability = 10f;
+    [DataField("baseGrowth")]
+    public float BaseGrowth;
+    [DataField("baseConductivity")]
+    public float BaseConductivity;
+    [DataField("baseEnthalpy")]
+    public float BaseEnthalpy;
+    [DataField("integrityChangeCap")]
+    public float IntegrityChangeCap = 2f;
+
     // --- Gas Characteristics (calculated each tick) ---
     [DataField("stability")]
     public float Stability = 10f;

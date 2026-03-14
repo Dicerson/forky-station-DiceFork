@@ -5,6 +5,7 @@ namespace Content.Shared._Funkystation.SM.Prototypes;
 [Prototype]
 public sealed partial class GasCharacteristicsPrototype : IPrototype
 {
+
     [IdDataField]
     public string ID { get; private set; } = default!;
 
