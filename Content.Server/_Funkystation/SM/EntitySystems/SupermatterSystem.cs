@@ -1,4 +1,5 @@
-﻿using Content.Server._Funkystation.SM.Components;
+﻿using System.Linq;
+using Content.Server._Funkystation.SM.Components;
 using Content.Server._Funkystation.SM.Events;
 using Content.Server.Administration.Logs;
 using Content.Server.Atmos.EntitySystems;
@@ -63,6 +64,13 @@ public sealed class SupermatterSystem : EntitySystem
         // …rest of the tick logic
     }
 
+    private static readonly Vector2i[] AbsorptionOffsets =
+    {
+        new(-1, -1), new(0, -1), new(1, -1),
+        new(-1,  0), new(0,  0), new(1,  0),
+        new(-1,  1), new(0,  1), new(1,  1)
+    };
+
     /// <summary>
     /// Absorbs gas in a 3 x 3 area with the Supermatter at the center
     /// </summary>
@@ -72,36 +80,35 @@ public sealed class SupermatterSystem : EntitySystem
     private void AbsorbGas(EntityUid smUid, SupermatterComponent sm, AtmosDeviceUpdateEvent args)
     {
         sm.CountVacuumTiles = 0;
-        var ratio = 0.05f;
+        var ratio = sm.RatioPerTile;
         if (args.Grid is not {} grid)
             return;
         var centerTile = _transformSystem.GetGridTilePositionOrDefault(smUid);
 
-        for (var dx = -1; dx <= 1; dx++)
+        foreach (var offset in AbsorptionOffsets)
         {
-            for (var dy = -1; dy <= 1; dy++)
+            var tile = centerTile + offset;
+
+            var mixture = _atmosphereSystem.GetTileMixture(grid, args.Map, tile, excite: true);
+
+            if (mixture == null)
             {
-                var tile = centerTile + new Vector2i(dx, dy);
+                sm.CountVacuumTiles++;
+                continue;
+            }
 
-                var mixture = _atmosphereSystem.GetTileMixture(grid, args.Map, tile, excite: true);
+            var pressure = mixture.Pressure;
+            if (pressure < sm.VacuumThreshold)
+                sm.CountVacuumTiles++;
 
-                if (mixture == null)
-                {
-                    sm.CountVacuumTiles += 1;
-                    continue;
-                }
+            if(pressure <= 0)
+                continue;
 
-                if (mixture.Pressure < 10f)
-                {
-                    sm.CountVacuumTiles += 1;
-                }
+            var absorbed = mixture.RemoveRatio(ratio);
 
-                var absorbed = mixture.RemoveRatio(ratio);
-                for (var gas = 0; gas < Atmospherics.AdjustedNumberOfGases; gas++)
-                {
-                    var amount = absorbed.GetMoles(gas);
-                    sm.AbsorbedGas.AdjustMoles(gas, amount);
-                }
+            foreach (var (gas, moles) in absorbed)
+            {
+                sm.AbsorbedGas.AdjustMoles(gas, moles);
             }
         }
     }
@@ -117,13 +124,10 @@ public sealed class SupermatterSystem : EntitySystem
         float conductivity = 0f;
         float enthalpy = 0f;
 
-        for (var i = 0; i < Atmospherics.AdjustedNumberOfGases; i++)
+        foreach (var (gas, moles) in sm.AbsorbedGas )
         {
-            var moles = sm.AbsorbedGas.GetMoles(i);
             if (moles <= 0f)
                 continue;
-
-            var gas = (Gas)i;
 
             if (!GasCharacteristicData.GasTable.TryGetValue(gas, out var ch))
                 continue;
@@ -207,11 +211,7 @@ public sealed class SupermatterSystem : EntitySystem
                 var absorbed = sm.AbsorbedGas.RemoveRatio(fraction);
                 _atmosphereSystem.Merge(sm.AbsorbedGas, absorbed);
 
-                var absorbedMoles = 0f;
-                for (var i = 0; i < Atmospherics.AdjustedNumberOfGases; i++)
-                {
-                    absorbedMoles += absorbed.GetMoles(i);
-                }
+                var absorbedMoles = absorbed.TotalMoles;
 
                 if (absorbedMoles <= 0f)
                     break;
@@ -239,7 +239,7 @@ public sealed class SupermatterSystem : EntitySystem
         }
     }
 
-    private void UpdateIntegrity(EntityUid uid, ref SupermatterComponent sm)
+    private void UpdateIntegrity(EntityUid uid, SupermatterComponent sm)
     {
         float delta = 0f;
 

@@ -21,6 +21,10 @@ public sealed partial class SupermatterComponent : SharedSupermatterComponent
     public float VacuumDamagePerTile = 0.5f;
     [DataField("absorptionHealing")]
     public float AbsorptionHealing = 1f;
+    [DataField("ratioPerTile")]
+    public float RatioPerTile = 0.09f;
+    [DataField("vacuumThreshold")]
+    public float VacuumThreshold = 10f;
 
 
     // --- Gas Characteristics (calculated each tick) ---
