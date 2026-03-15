@@ -6,7 +6,7 @@ using Robust.Shared.Serialization;
 
 namespace Content.Server._Funkystation.SM.Components;
 
-[RegisterComponent, NetworkedComponent]
+[RegisterComponent]
 [Access(typeof(SupermatterSystem))]
 public sealed partial class SupermatterComponent : SharedSupermatterComponent
 {
@@ -92,4 +92,10 @@ public sealed partial class SupermatterComponent : SharedSupermatterComponent
     public float LastMaxCharacteristic;
     [DataField("visualState")]
     public SupermatterState VisualState = SupermatterState.Inactive;
+
+    /// <summary>
+    /// Whether the entity this supermatter is attached to is being absorbed by another supermatter.
+    /// </summary>
+    [ViewVariables(VVAccess.ReadOnly)]
+    public bool BeingAbsorbedByAnotherSupermatter = false;
 }
