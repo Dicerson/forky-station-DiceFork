@@ -96,6 +96,7 @@ public sealed class SupermatterSystem : EntitySystem
     private void OnProcessSupermatter(EntityUid uid, SupermatterComponent sm, AtmosDeviceUpdateEvent args)
     {
         AbsorbGas(uid, sm, args);
+        ApplyPowerPool(sm);
         ComputeGasCharacteristics(sm);
         ApplyStability(sm);
         ApplyEnthalpy(sm);
@@ -156,6 +157,20 @@ public sealed class SupermatterSystem : EntitySystem
                 sm.AbsorbedGas.AdjustMoles(gas, moles);
             }
         }
+    }
+
+    /// <summary>
+    /// Adds the power from when an entity is ashed to the SM
+    /// </summary>
+    /// <param name="sm"></param>
+    private void ApplyPowerPool(SupermatterComponent sm)
+    {
+        if (sm.PowerPool <= 0f)
+            return;
+
+        var gained = sm.PowerPool * 0.10f; // 10%
+        sm.Power += gained;
+        sm.PowerPool -= gained;
     }
 
     /// <summary>
@@ -483,7 +498,7 @@ public sealed class SupermatterSystem : EntitySystem
             var mob = Comp<MobStateComponent>(uid);
             if (mob.CurrentState is MobState.Alive or MobState.Critical)
             {
-                sm.Power += 1000f; // medium entity power gain
+                sm.PowerPool += 1000f; // medium entity power gain
                 sm.Integrity -= 100f; // 1/10 the power gain
                 // TODO: make it so different size mobs give different amount of power gain (Need to add a component with the size of the mob to all mob entities)
             }
@@ -492,7 +507,7 @@ public sealed class SupermatterSystem : EntitySystem
         {
             if (TryComp<PhysicsComponent>(uid, out var phys))
             {
-                sm.Power += phys.Mass;
+                sm.PowerPool += phys.Mass;
                 sm.AbsorptionHealingPool += phys.Mass;
             }
         }

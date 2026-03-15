@@ -78,6 +78,8 @@ public sealed partial class SupermatterComponent : SharedSupermatterComponent
     public float ReproductionProgress;
     [DataField("absorptionHealingPool")]
     public float AbsorptionHealingPool;
+    [DataField("powerPool")]
+    public float PowerPool;
     [DataField("countVacuumTiles")]
     public int CountVacuumTiles;
 
