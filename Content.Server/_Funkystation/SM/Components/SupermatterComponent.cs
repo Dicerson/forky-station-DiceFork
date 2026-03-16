@@ -71,12 +71,8 @@ public sealed partial class SupermatterComponent : SharedSupermatterComponent
     public float PowerPercentage = 0.005f;
     [DataField("radiationDamageMultiplier")]
     public float RadiationDamageMultiplier = 10f; // For PA/emitters
-    [DataField("smallMobPower")]
-    public float SmallMobPower = 200f;
-    [DataField("mediumMobPower")]
-    public float MediumMobPower = 1000f;
-    [DataField("largeMobPower")]
-    public float LargeMobPower = 2000f;
+    [DataField("integrityDivisor")]
+    public float IntegrityDivisor = 10f;
 
 
     // --- Gas Characteristics (calculated each tick) ---

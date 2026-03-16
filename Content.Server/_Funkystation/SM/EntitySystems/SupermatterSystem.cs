@@ -4,6 +4,7 @@ using Content.Server._Funkystation.SM.Events;
 using Content.Server.Administration.Logs;
 using Content.Server.Atmos.EntitySystems;
 using Content.Server.Atmos.Piping.Components;
+using Content.Shared._Funkystation.Mobs;
 using Content.Shared._Funkystation.SM.Components;
 using Content.Shared._Funkystation.SM.Prototypes;
 using Content.Shared.Atmos;
@@ -592,16 +593,19 @@ public sealed class SupermatterSystem : EntitySystem
     /// <param name="uid"></param>
     /// <param name="sm"></param>
     /// <param name="args"></param>
-    public void OnAshed(EntityUid uid,SupermatterComponent sm, EntityAshedBySupermatterEvent args)
+    private void OnAshed(EntityUid uid,SupermatterComponent sm, EntityAshedBySupermatterEvent args)
     {
         if (HasComp<MobStateComponent>(uid))
         {
             var mob = Comp<MobStateComponent>(uid);
             if (mob.CurrentState is not (MobState.Alive or MobState.Critical))
                 return;
-            sm.PowerPool += 1000f; // medium entity power gain
-            sm.Integrity -= 100f; // 1/10 the power gain
-            // TODO: make it so different size mobs give different amount of power gain (Need to add a component with the size of the mob to all mob entities)
+
+            if (!TryComp<MobSizeComponent>(uid, out var size))
+                return;
+            var power = size.SizeProto?.SmPower ?? 0f;
+            sm.PowerPool += power;
+            sm.Integrity -= power / sm.IntegrityDivisor;
         }
         else
         {
