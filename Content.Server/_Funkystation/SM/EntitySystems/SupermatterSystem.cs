@@ -7,6 +7,7 @@ using Content.Server.Atmos.Piping.Components;
 using Content.Shared._Funkystation.SM.Components;
 using Content.Shared._Funkystation.SM.Prototypes;
 using Content.Shared.Atmos;
+using Content.Shared.Damage.Systems;
 using Content.Shared.Database;
 using Content.Shared.Mind.Components;
 using Content.Shared.Mobs;
@@ -48,6 +49,7 @@ public sealed class SupermatterSystem : EntitySystem
         SubscribeLocalEvent<SupermatterComponent, StartCollideEvent>(OnAshAbsorption);
         SubscribeLocalEvent<PrototypesReloadedEventArgs>(OnPrototypesReloaded);
         SubscribeLocalEvent<ContainerManagerComponent, SupermatterConsumedEntityEvent>(OnContainerConsumed);
+        SubscribeLocalEvent<SupermatterComponent, DamageChangedEvent>(OnDamage);
         LoadGasCharacteristics();
     }
 
@@ -98,13 +100,20 @@ public sealed class SupermatterSystem : EntitySystem
         AbsorbGas(uid, sm, args);
         ApplyPowerPool(sm);
         ComputeGasCharacteristics(sm);
+        ApplyPowerMultipliers(sm);
         ApplyStability(sm);
         ApplyEnthalpy(sm);
-        ApplyGrowth(uid, sm);
+        ApplyGrowth(sm);
         UpdateReproductionAndShards(uid, sm);
         sm.CurrentConductivity = sm.Conductivity;
-        UpdateIntegrity(uid, sm);
-        // …rest of the tick logic
+        UpdateIntegrity(sm);
+        CheckDelamination(uid, sm);
+        if (sm.Delaminated)
+            return;
+
+        ComputeRadiation(sm);
+
+        ReleaseGas(uid, sm, args);
     }
 
     /// <summary>
@@ -207,16 +216,28 @@ public sealed class SupermatterSystem : EntitySystem
     }
 
     /// <summary>
+    /// Characteristic Multiplication by Power
+    /// </summary>
+    /// <param name="sm"></param>
+    private void ApplyPowerMultipliers(SupermatterComponent sm)
+    {
+        var multiplier = 1f + sm.Power / sm.PowerScalingFactor;
+        sm.Growth *= multiplier;
+        sm.Conductivity *= multiplier;
+        sm.Enthalpy *= multiplier;
+    }
+
+    /// <summary>
     /// Updates the stability
     /// </summary>
     /// <param name="sm"></param>
     private void ApplyStability(SupermatterComponent sm)
     {
-        var m = (sm.NeutralStability - sm.Stability) / sm.NeutralStability;
+        var stabilityEffectScale = (sm.NeutralStability - sm.Stability) / sm.NeutralStability;
 
-        sm.Growth       *= m;
-        sm.Conductivity *= m;
-        sm.Enthalpy     *= m;
+        sm.Growth       *= stabilityEffectScale;
+        sm.Conductivity *= stabilityEffectScale;
+        sm.Enthalpy     *= stabilityEffectScale;
 
         sm.Power *= 1f - sm.StabilityPowerDrainScale * sm.Stability;
         sm.Power += sm.Stability;
@@ -243,7 +264,7 @@ public sealed class SupermatterSystem : EntitySystem
     /// </summary>
     /// <param name="uid"></param>
     /// <param name="sm"></param>
-    private void ApplyGrowth(EntityUid uid, SupermatterComponent sm)
+    private void ApplyGrowth(SupermatterComponent sm)
     {
         switch (sm.Growth)
         {
@@ -323,7 +344,7 @@ public sealed class SupermatterSystem : EntitySystem
     /// </summary>
     /// <param name="uid"></param>
     /// <param name="sm"></param>
-    private void UpdateIntegrity(EntityUid uid, SupermatterComponent sm)
+    private void UpdateIntegrity(SupermatterComponent sm)
     {
         var delta = 0f;
 
@@ -358,6 +379,88 @@ public sealed class SupermatterSystem : EntitySystem
         sm.Integrity = Math.Clamp(sm.Integrity, 0f, sm.MaxIntegrity);
     }
 
+    /// <summary>
+    /// Checks if the supermatter is delaminating
+    /// and raises an event if it is
+    /// </summary>
+    /// <param name="uid"></param>
+    /// <param name="sm"></param>
+    private void CheckDelamination(EntityUid uid, SupermatterComponent sm)
+    {
+        if (sm.Integrity > 0)
+            return;
+        var dominant = GetDominantCharacteristic(sm);
+        var ev = new SupermatterDelaminationEvent(uid, dominant);
+        RaiseLocalEvent(uid, ref ev);
+        sm.Delaminated = true;
+    }
+
+    /// <summary>
+    /// Gets the dominant Characteristics for delamination
+    /// </summary>
+    /// <param name="sm"></param>
+    /// <returns></returns>
+    private GasCharacteristicsType GetDominantCharacteristic(SupermatterComponent sm)
+    {
+        // Start with Growth as the default
+        var dominant = GasCharacteristicsType.Growth;
+        var max = MathF.Abs(sm.Growth);
+
+        var conductivity = MathF.Abs(sm.Conductivity);
+        if (conductivity > max)
+        {
+            max = conductivity;
+            dominant = GasCharacteristicsType.Conductivity;
+        }
+
+        var enthalpy = MathF.Abs(sm.Enthalpy);
+        if (enthalpy > max)
+        {
+            max = enthalpy;
+            dominant = GasCharacteristicsType.Enthalpy;
+        }
+
+        var stability = MathF.Abs(sm.Stability);
+        if (stability > max)
+        {
+            dominant = GasCharacteristicsType.Stability;
+        }
+
+        return dominant;
+    }
+
+    /// <summary>
+    /// Computes the radiation output of the Supermatter based on power and stability
+    /// </summary>
+    /// <param name="sm"></param>
+    private void ComputeRadiation(SupermatterComponent sm)
+    {
+        var baseRadiation = sm.BaseRadiation + (sm.Power * sm.PowerPercentage);
+        var stabilityMultiplier = (10f - sm.Stability) / 10f;
+        sm.CurrentRadiation = baseRadiation * stabilityMultiplier;
+    }
+
+    /// <summary>
+    /// Releases the gases the sm absorbed and produced
+    /// </summary>
+    /// <param name="uid"></param>
+    /// <param name="sm"></param>
+    /// <param name="args"></param>
+    private void ReleaseGas(EntityUid uid,SupermatterComponent sm, AtmosDeviceUpdateEvent args)
+    {
+        if (args.Grid is not {} grid)
+            return;
+        var centerTile = _transformSystem.GetGridTilePositionOrDefault(uid);
+
+        var mixture = _atmosphereSystem.GetTileMixture(grid, args.Map, centerTile, excite: true);
+        if (mixture == null)
+            return;
+
+        _atmosphereSystem.Merge(mixture, sm.AbsorbedGas);
+        sm.AbsorbedGas.Clear();
+    }
+
+
     #region Ashing
     /// <summary>
     /// Handles supermatter ashing any entities they bump into.
@@ -370,10 +473,6 @@ public sealed class SupermatterSystem : EntitySystem
     {
         AttemptAshEntity(uid, args.OtherEntity, sm);
     }
-
-
-
-
 
     /// <summary>
     /// Attempts to ash all entities within a container.
@@ -477,6 +576,8 @@ public sealed class SupermatterSystem : EntitySystem
             _adminLogger.Add(LogType.EntityDelete, LogImpact.High, $"{ToPrettyString(morsel):player} entered the Supermatter of {ToPrettyString(hungry)} and was deleted");
         }
 
+        var coords = Transform(morsel).Coordinates;
+        SpawnAtPosition("Ash", coords);
         QueueDel(morsel);
         var evSelf = new EntityAshedBySupermatterEvent(morsel, hungry, sm, outerContainer);
         var evEaten = new SupermatterConsumedEntityEvent(morsel, hungry, sm, outerContainer);
@@ -496,23 +597,19 @@ public sealed class SupermatterSystem : EntitySystem
         if (HasComp<MobStateComponent>(uid))
         {
             var mob = Comp<MobStateComponent>(uid);
-            if (mob.CurrentState is MobState.Alive or MobState.Critical)
-            {
-                sm.PowerPool += 1000f; // medium entity power gain
-                sm.Integrity -= 100f; // 1/10 the power gain
-                // TODO: make it so different size mobs give different amount of power gain (Need to add a component with the size of the mob to all mob entities)
-            }
+            if (mob.CurrentState is not (MobState.Alive or MobState.Critical))
+                return;
+            sm.PowerPool += 1000f; // medium entity power gain
+            sm.Integrity -= 100f; // 1/10 the power gain
+            // TODO: make it so different size mobs give different amount of power gain (Need to add a component with the size of the mob to all mob entities)
         }
         else
         {
-            if (TryComp<PhysicsComponent>(uid, out var phys))
-            {
-                sm.PowerPool += phys.Mass;
-                sm.AbsorptionHealingPool += phys.Mass;
-            }
+            if (!TryComp<PhysicsComponent>(uid, out var phys))
+                return;
+            sm.PowerPool += phys.Mass;
+            sm.AbsorptionHealingPool += phys.Mass;
         }
-        var coords = Transform(uid).Coordinates;
-        SpawnAtPosition("Ash", coords);
     }
 
     /// <summary>
@@ -614,6 +711,34 @@ public sealed class SupermatterSystem : EntitySystem
     }
     #endregion
 
+    /// <summary>
+    /// Converts damage into power and
+    /// scales radiation damage by the radiation damage multiplier so that it gives way more power
+    /// </summary>
+    /// <param name="uid"></param>
+    /// <param name="sm"></param>
+    /// <param name="args"></param>
+    private void OnDamage(EntityUid uid, SupermatterComponent sm, ref DamageChangedEvent args)
+    {
+        if (args.DamageDelta is null)
+            return;
+        var totalDamage = 0f;
+
+        foreach (var (typeId, amount) in args.DamageDelta.DamageDict)
+        {
+            if (amount <= 0)
+                continue;
+
+            if (sm.RadiationDamageTypes.Contains(typeId))
+                totalDamage += (float) amount * sm.RadiationDamageMultiplier;
+            else
+                totalDamage += (float) amount;
+        }
+        if (totalDamage <= 0)
+            return;
+
+        sm.PowerPool += totalDamage;
+    }
 
 
 

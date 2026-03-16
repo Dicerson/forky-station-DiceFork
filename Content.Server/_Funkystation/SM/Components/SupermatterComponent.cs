@@ -25,6 +25,13 @@ public sealed partial class SupermatterComponent : SharedSupermatterComponent
     public float RatioPerTile = 0.09f;
     [DataField("vacuumThreshold")]
     public float VacuumThreshold = 10f;
+    [DataField("currentRadiation")]
+    public float CurrentRadiation;
+    [DataField("RadiationDamageTypes")]
+    public List<string> RadiationDamageTypes= new();
+    [ViewVariables(VVAccess.ReadOnly)]
+    public bool Delaminated = false;
+
 
 
     // --- Process values ---
@@ -56,6 +63,21 @@ public sealed partial class SupermatterComponent : SharedSupermatterComponent
     public float BaseEnthalpy;
     [DataField("integrityChangeCap")]
     public float IntegrityChangeCap = 2f;
+    [DataField("powerScalingFactor")]
+    public float PowerScalingFactor = 1000f;
+    [DataField("baseRadiation")]
+    public float BaseRadiation = 3f;
+    [DataField("powerPercentage")]
+    public float PowerPercentage = 0.005f;
+    [DataField("radiationDamageMultiplier")]
+    public float RadiationDamageMultiplier = 10f; // For PA/emitters
+    [DataField("smallMobPower")]
+    public float SmallMobPower = 200f;
+    [DataField("mediumMobPower")]
+    public float MediumMobPower = 1000f;
+    [DataField("largeMobPower")]
+    public float LargeMobPower = 2000f;
+
 
     // --- Gas Characteristics (calculated each tick) ---
     [DataField("stability")]

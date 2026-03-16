@@ -25,3 +25,10 @@ public readonly record struct GasCharacteristics(
     float Conductivity,
     float Enthalpy
 );
+public enum GasCharacteristicsType
+{
+    Stability,
+    Growth,
+    Conductivity,
+    Enthalpy,
+}
