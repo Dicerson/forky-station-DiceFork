@@ -28,7 +28,7 @@ public sealed partial class SupermatterComponent : SharedSupermatterComponent
     [DataField("currentRadiation")]
     public float CurrentRadiation;
     [DataField("RadiationDamageTypes")]
-    public List<string> RadiationDamageTypes= new();
+    public List<string> RadiationDamageTypes= [];
     [ViewVariables(VVAccess.ReadOnly)]
     public bool Delaminated = false;
 
@@ -89,7 +89,7 @@ public sealed partial class SupermatterComponent : SharedSupermatterComponent
 
     // --- Internal Buffers ---
     [DataField("absorbedGas")]
-    public GasMixture AbsorbedGas;
+    public GasMixture AbsorbedGas = new();
     [DataField("reproduction")]
     public float Reproduction;
     [DataField("reproductionProgress")]

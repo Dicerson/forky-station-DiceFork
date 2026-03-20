@@ -100,6 +100,7 @@ public sealed class SupermatterSystem : EntitySystem
     /// <param name="args"></param>
     private void OnProcessSupermatter(EntityUid uid, SupermatterComponent sm, AtmosDeviceUpdateEvent args)
     {
+        sm.AbsorbedGas.Clear();
         AbsorbGas(uid, sm, args);
         ApplyPowerPool(sm);
         ComputeGasCharacteristics(sm);
@@ -212,10 +213,10 @@ public sealed class SupermatterSystem : EntitySystem
         }
 
         // conversion to percentage
-        sm.Stability    = stability / 100f;
-        sm.Growth       = growth / 100f;
-        sm.Conductivity = conductivity / 100f;
-        sm.Enthalpy     = enthalpy / 100f;
+        //sm.Stability    = stability / 100f;
+        //sm.Growth       = growth / 100f;
+        //sm.Conductivity = conductivity / 100f;
+        //sm.Enthalpy     = enthalpy / 100f;
 
     }
 
@@ -471,7 +472,6 @@ public sealed class SupermatterSystem : EntitySystem
             return;
 
         _atmosphereSystem.Merge(mixture, sm.AbsorbedGas);
-        sm.AbsorbedGas.Clear();
     }
 
     // This whole section could potentially be reduced by using the

@@ -43,6 +43,7 @@
     ratioPerTile: 0.09
     RadiationDamageTypes:
     - Radiation
+    AbsorbedGas: {}
 
   - type: AtmosDevice
     requireAnchored: false
