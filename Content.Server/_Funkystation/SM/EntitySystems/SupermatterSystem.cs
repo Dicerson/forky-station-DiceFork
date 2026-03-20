@@ -255,13 +255,8 @@ public sealed class SupermatterSystem : EntitySystem
     private void ApplyEnthalpy( SupermatterComponent sm)
     {
         var deltaEnergy = sm.Enthalpy * 1_000_000f; // MJ → joules
-        var temperature = sm.AbsorbedGas.Temperature;
-
-        var sourceHeatCapacity = _atmosphereSystem.GetHeatCapacity(sm.AbsorbedGas, false);
-        sm.AbsorbedGas.Temperature = _atmosphereSystem.GetThermalEnergy(sm.AbsorbedGas, sourceHeatCapacity + deltaEnergy);
-
-        var deltaP = sm.Enthalpy * (temperature - 293.15f); // temperature - room temperature in Kelvin
-        sm.Power += deltaP;
+        sm.Power = sm.Enthalpy * (sm.AbsorbedGas.Temperature - sm.RoomTemp); // temperature - room temperature in Kelvin
+        _atmosphereSystem.AddHeat(sm.AbsorbedGas, deltaEnergy);
     }
 
     /// <summary>

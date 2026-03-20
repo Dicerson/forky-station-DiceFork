@@ -31,6 +31,8 @@ public sealed partial class SupermatterComponent : SharedSupermatterComponent
     public List<string> RadiationDamageTypes= [];
     [ViewVariables(VVAccess.ReadOnly)]
     public bool Delaminated = false;
+    [DataField("roomTemp")]
+    public float RoomTemp = 293.15f;
 
 
 
