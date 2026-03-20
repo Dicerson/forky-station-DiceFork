@@ -13,6 +13,7 @@ using Content.Shared.Database;
 using Content.Shared.Mind.Components;
 using Content.Shared.Mobs;
 using Content.Shared.Mobs.Components;
+using Content.Shared.Radiation.Components;
 using Content.Shared.Station.Components;
 using Content.Shared.Tag;
 using Content.Shared.Tools.Components;
@@ -39,6 +40,7 @@ public sealed class SupermatterSystem : EntitySystem
     public override void Initialize()
     {
         base.Initialize();
+
         SubscribeLocalEvent<SupermatterComponent, AtmosDeviceUpdateEvent>(OnProcessSupermatter);
         SubscribeLocalEvent<MapGridComponent, SupermatterAttemptConsumeEntityEvent>(PreventConsume);
         SubscribeLocalEvent<StationDataComponent, SupermatterAttemptConsumeEntityEvent>(PreventConsume);
@@ -113,6 +115,7 @@ public sealed class SupermatterSystem : EntitySystem
             return;
 
         ComputeRadiation(sm);
+        EmitRadiation(uid, sm);
 
         ReleaseGas(uid, sm, args);
     }
@@ -263,7 +266,6 @@ public sealed class SupermatterSystem : EntitySystem
     /// <summary>
     /// Updates the growth
     /// </summary>
-    /// <param name="uid"></param>
     /// <param name="sm"></param>
     private void ApplyGrowth(SupermatterComponent sm)
     {
@@ -321,7 +323,7 @@ public sealed class SupermatterSystem : EntitySystem
     }
 
     /// <summary>
-    /// Updates the repoduction and creates a shard when reaching the threshold
+    /// Updates the reproduction and creates a shard when reaching the threshold
     /// </summary>
     /// <param name="uid"></param>
     /// <param name="sm"></param>
@@ -442,6 +444,17 @@ public sealed class SupermatterSystem : EntitySystem
     }
 
     /// <summary>
+    /// Updates the RadiationSourceComponent with the current radiation intensity of the supermatter
+    /// </summary>
+    /// <param name="smUid"></param>
+    /// <param name="sm"></param>
+    private void EmitRadiation(EntityUid smUid, SupermatterComponent sm)
+    {
+        var rad = EnsureComp<RadiationSourceComponent>(smUid);
+        rad.Intensity = sm.CurrentRadiation;
+    }
+
+    /// <summary>
     /// Releases the gases the sm absorbed and produced
     /// </summary>
     /// <param name="uid"></param>
@@ -461,7 +474,10 @@ public sealed class SupermatterSystem : EntitySystem
         sm.AbsorbedGas.Clear();
     }
 
-
+    // This whole section could potentially be reduced by using the
+    // Event horizon consumption system as most of the functions are taken from there
+    // and changed a bit to fit the supermatter.
+    // Credit to TemporalOroboros <TemporalOroboros@gmail.com> for the original functions.
     #region Ashing
     /// <summary>
     /// Handles supermatter ashing any entities they bump into.
@@ -470,7 +486,7 @@ public sealed class SupermatterSystem : EntitySystem
     /// <param name="uid"></param>
     /// <param name="sm"></param>
     /// <param name="args"></param>
-    public void OnAshAbsorption(EntityUid uid, SupermatterComponent sm, ref StartCollideEvent args)
+    private void OnAshAbsorption(EntityUid uid, SupermatterComponent sm, ref StartCollideEvent args)
     {
         AttemptAshEntity(uid, args.OtherEntity, sm);
     }
@@ -484,7 +500,7 @@ public sealed class SupermatterSystem : EntitySystem
     /// <param name="container"></param>
     /// <param name="sm"></param>
     /// <param name="outerContainer"></param>
-    public void AshEntitiesInContainer(EntityUid hungry, BaseContainer container, SupermatterComponent sm, BaseContainer? outerContainer = null)
+    private void AshEntitiesInContainer(EntityUid hungry, BaseContainer container, SupermatterComponent sm, BaseContainer? outerContainer = null)
     {
         // Removing the immune entities from the container needs to be deferred until after iteration or the iterator raises an error.
         List<EntityUid> immune = new();
@@ -527,7 +543,7 @@ public sealed class SupermatterSystem : EntitySystem
     /// <param name="sm"></param>
     /// <param name="outerContainer"></param>
     /// <returns></returns>
-    public bool AttemptAshEntity(EntityUid hungry, EntityUid morsel, SupermatterComponent sm, BaseContainer? outerContainer = null)
+    private bool AttemptAshEntity(EntityUid hungry, EntityUid morsel, SupermatterComponent sm, BaseContainer? outerContainer = null)
     {
         if (!CanAshEntity(hungry, morsel, sm))
             return false;
@@ -552,7 +568,7 @@ public sealed class SupermatterSystem : EntitySystem
     /// <param name="uid"></param>
     /// <param name="sm"></param>
     /// <returns></returns>
-    public bool CanAshEntity(EntityUid hungry, EntityUid uid, SupermatterComponent sm)
+    private bool CanAshEntity(EntityUid hungry, EntityUid uid, SupermatterComponent sm)
     {
         var ev = new SupermatterAttemptConsumeEntityEvent(uid, hungry, sm);
         RaiseLocalEvent(uid, ref ev);
@@ -566,7 +582,7 @@ public sealed class SupermatterSystem : EntitySystem
     /// <param name="morsel"></param>
     /// <param name="sm"></param>
     /// <param name="outerContainer"></param>
-    public void AshEntity(EntityUid hungry, EntityUid morsel, SupermatterComponent sm, BaseContainer? outerContainer = null)
+    private void AshEntity(EntityUid hungry, EntityUid morsel, SupermatterComponent sm, BaseContainer? outerContainer = null)
     {
         if (EntityManager.IsQueuedForDeletion(morsel)) // already handled, and we're substepping
             return;
@@ -623,7 +639,7 @@ public sealed class SupermatterSystem : EntitySystem
     /// <param name="comp"></param>
     /// <param name="args"></param>
     /// <typeparam name="TComp"></typeparam>
-    public static void PreventConsume<TComp>(EntityUid uid, TComp comp, ref SupermatterAttemptConsumeEntityEvent args)
+    private static void PreventConsume<TComp>(EntityUid uid, TComp comp, ref SupermatterAttemptConsumeEntityEvent args)
     {
         if (!args.Cancelled)
             args.Cancelled = true;
@@ -668,7 +684,7 @@ public sealed class SupermatterSystem : EntitySystem
     /// <param name="uid"></param>
     /// <param name="comp"></param>
     /// <param name="args"></param>
-    private void OnAnotherSupermatterAbsorbedThisSupermatter(EntityUid uid, SupermatterComponent comp, ref SupermatterConsumedEntityEvent args)
+    private static void OnAnotherSupermatterAbsorbedThisSupermatter(EntityUid uid, SupermatterComponent comp, ref SupermatterConsumedEntityEvent args)
     {
         comp.BeingAbsorbedByAnotherSupermatter = true;
     }
@@ -743,8 +759,4 @@ public sealed class SupermatterSystem : EntitySystem
 
         sm.PowerPool += totalDamage;
     }
-
-
-
-
 }
