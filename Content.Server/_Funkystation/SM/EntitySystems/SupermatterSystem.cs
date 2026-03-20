@@ -593,31 +593,31 @@ public sealed class SupermatterSystem : EntitySystem
             _adminLogger.Add(LogType.EntityDelete, LogImpact.High, $"{ToPrettyString(morsel):player} entered the Supermatter of {ToPrettyString(hungry)} and was deleted");
         }
 
-        var coords = Transform(morsel).Coordinates;
-        SpawnAtPosition("Ash", coords);
         QueueDel(morsel);
         var evSelf = new EntityAshedBySupermatterEvent(morsel, hungry, sm, outerContainer);
         var evEaten = new SupermatterConsumedEntityEvent(morsel, hungry, sm, outerContainer);
         RaiseLocalEvent(hungry, ref evSelf);
         RaiseLocalEvent(morsel, ref evEaten);
     }
+
     /// <summary>
     /// Adds power to the sm and adjust the integrity or AbsorptionHealingPool
     /// accordingly to whether the entity is alive or not.
     /// Also spawns an ash entity at the location of the ashed entity
     /// </summary>
     /// <param name="uid"></param>
+    /// <param name="smUid"></param>
     /// <param name="sm"></param>
     /// <param name="args"></param>
     private void OnAshed(EntityUid uid,SupermatterComponent sm, EntityAshedBySupermatterEvent args)
     {
-        if (HasComp<MobStateComponent>(uid))
+        if (HasComp<MobStateComponent>(args.Entity))
         {
-            var mob = Comp<MobStateComponent>(uid);
+            var mob = Comp<MobStateComponent>(args.Entity);
             if (mob.CurrentState is not (MobState.Alive or MobState.Critical))
                 return;
 
-            if (!TryComp<MobSizeComponent>(uid, out var size))
+            if (!TryComp<MobSizeComponent>(args.Entity, out var size))
                 return;
             var power = size.SizeProto?.SmPower ?? 0f;
             sm.PowerPool += power;
@@ -625,11 +625,13 @@ public sealed class SupermatterSystem : EntitySystem
         }
         else
         {
-            if (!TryComp<PhysicsComponent>(uid, out var phys))
+            if (!TryComp<PhysicsComponent>(args.Entity, out var phys))
                 return;
             sm.PowerPool += phys.Mass;
             sm.AbsorptionHealingPool += phys.Mass;
         }
+        var coords = Transform(args.Entity).Coordinates;
+        SpawnAtPosition("Ash", coords);
     }
 
     /// <summary>
