@@ -1,5 +1,4 @@
-﻿using System.Linq;
-using Content.Server._Funkystation.SM.Components;
+﻿using Content.Server._Funkystation.SM.Components;
 using Content.Server._Funkystation.SM.Events;
 using Content.Server.Administration.Logs;
 using Content.Server.Atmos.EntitySystems;
@@ -8,15 +7,18 @@ using Content.Shared._Funkystation.Mobs;
 using Content.Shared._Funkystation.SM.Components;
 using Content.Shared._Funkystation.SM.Prototypes;
 using Content.Shared.Atmos;
+using Content.Shared.Chemistry.Components;
+using Content.Shared.Chemistry.Components.SolutionManager;
 using Content.Shared.Damage.Systems;
 using Content.Shared.Database;
 using Content.Shared.Mind.Components;
 using Content.Shared.Mobs;
 using Content.Shared.Mobs.Components;
+using Content.Shared.Projectiles;
 using Content.Shared.Radiation.Components;
+using Content.Shared.Stacks;
 using Content.Shared.Station.Components;
 using Content.Shared.Tag;
-using Content.Shared.Tools.Components;
 using Robust.Server.GameObjects;
 using Robust.Shared.Containers;
 using Robust.Shared.Map.Components;
@@ -35,6 +37,7 @@ public sealed class SupermatterSystem : EntitySystem
     [Dependency] private readonly TagSystem _tagSystem = default!;
     [Dependency] private readonly TransformSystem _transformSystem = default!;
     [Dependency] private readonly SharedTransformSystem _xformSystem = default!;
+    [Dependency] private readonly MetaDataSystem _metaDataSystem = default!;
 
     private static readonly ProtoId<TagPrototype> HighRiskItemTag = "HighRiskItem";
     public override void Initialize()
@@ -42,16 +45,17 @@ public sealed class SupermatterSystem : EntitySystem
         base.Initialize();
 
         SubscribeLocalEvent<SupermatterComponent, AtmosDeviceUpdateEvent>(OnProcessSupermatter);
-        SubscribeLocalEvent<MapGridComponent, SupermatterAttemptConsumeEntityEvent>(PreventConsume);
-        SubscribeLocalEvent<StationDataComponent, SupermatterAttemptConsumeEntityEvent>(PreventConsume);
+        SubscribeLocalEvent<MapGridComponent, SupermatterAttemptConsumeEntityEvent>(PreventAshing);
+        SubscribeLocalEvent<StationDataComponent, SupermatterAttemptConsumeEntityEvent>(PreventAshing);
+        SubscribeLocalEvent<ProjectileComponent, SupermatterAttemptConsumeEntityEvent>(PreventAshing);
         SubscribeLocalEvent<SupermatterComponent, EntGotInsertedIntoContainerMessage>(OnSupermatterContained);
         SubscribeLocalEvent<SupermatterContainedEvent>(OnSupermatterContained);
         SubscribeLocalEvent<SupermatterComponent, SupermatterAttemptConsumeEntityEvent>(OnAnotherSupermatterAttemptAbsorbThisSupermatter);
-        SubscribeLocalEvent<SupermatterComponent, SupermatterConsumedEntityEvent>(OnAnotherSupermatterAbsorbedThisSupermatter);
+        SubscribeLocalEvent<SupermatterComponent, SupermatterAshedEntityEvent>(OnAnotherSupermatterAbsorbedThisSupermatter);
         SubscribeLocalEvent<SupermatterComponent, EntityAshedBySupermatterEvent>(OnAshed);
         SubscribeLocalEvent<SupermatterComponent, StartCollideEvent>(OnAshAbsorption);
         SubscribeLocalEvent<PrototypesReloadedEventArgs>(OnPrototypesReloaded);
-        SubscribeLocalEvent<ContainerManagerComponent, SupermatterConsumedEntityEvent>(OnContainerConsumed);
+        SubscribeLocalEvent<ContainerManagerComponent, SupermatterAshedEntityEvent>(OnContainerAshed);
         SubscribeLocalEvent<SupermatterComponent, DamageChangedEvent>(OnDamage);
         LoadGasCharacteristics();
     }
@@ -165,11 +169,11 @@ public sealed class SupermatterSystem : EntitySystem
                 continue;
 
             var absorbed = mixture.RemoveRatio(ratio);
-
             foreach (var (gas, moles) in absorbed)
             {
                 sm.AbsorbedGas.AdjustMoles(gas, moles);
             }
+            sm.AbsorbedGas.Temperature = absorbed.Temperature;
         }
     }
 
@@ -179,7 +183,7 @@ public sealed class SupermatterSystem : EntitySystem
     /// <param name="sm"></param>
     private void ApplyPowerPool(SupermatterComponent sm)
     {
-        if (sm.PowerPool <= 0f)
+        if (sm.PowerPool <= 0.1f)
             return;
 
         var gained = sm.PowerPool * 0.10f; // 10%
@@ -246,6 +250,8 @@ public sealed class SupermatterSystem : EntitySystem
 
         sm.Power *= 1f - sm.StabilityPowerDrainScale * sm.Stability;
         sm.Power += sm.Stability;
+        if (sm.Power <= 0f)
+            sm.Power = 0;
     }
 
     /// <summary>
@@ -255,7 +261,9 @@ public sealed class SupermatterSystem : EntitySystem
     private void ApplyEnthalpy( SupermatterComponent sm)
     {
         var deltaEnergy = sm.Enthalpy * 1_000_000f; // MJ → joules
-        sm.Power = sm.Enthalpy * (sm.AbsorbedGas.Temperature - sm.NeutralEnthalpyTemperature); // temperature - room temperature in Kelvin
+        sm.Power += sm.Enthalpy * (sm.AbsorbedGas.Temperature - sm.NeutralEnthalpyTemperature); // temperature - room temperature in Kelvin
+        if (sm.Power <= 0f)
+            sm.Power = 0;
         _atmosphereSystem.AddHeat(sm.AbsorbedGas, deltaEnergy);
     }
 
@@ -290,6 +298,8 @@ public sealed class SupermatterSystem : EntitySystem
                 }
 
                 sm.Power -= amount * count;
+                if (sm.Power <= 0f)
+                    sm.Power = 0;
                 return;
             }
             //Positive growth
@@ -310,7 +320,7 @@ public sealed class SupermatterSystem : EntitySystem
                 if (absorbedMoles <= 0f)
                     break;
 
-                sm.Power += absorbedMoles;
+                sm.Power += Math.Abs(absorbedMoles);
                 sm.Reproduction += absorbedMoles;
                 break;
             }
@@ -366,6 +376,7 @@ public sealed class SupermatterSystem : EntitySystem
         }
 
         sm.Integrity += Math.Clamp(delta, -sm.IntegrityChangeCap, sm.IntegrityChangeCap);
+        sm.Integrity = Math.Clamp(sm.Integrity, 0f, sm.MaxIntegrity);
     }
 
     /// <summary>
@@ -476,49 +487,7 @@ public sealed class SupermatterSystem : EntitySystem
         AttemptAshEntity(uid, args.OtherEntity, sm);
     }
 
-    /// <summary>
-    /// Attempts to ash all entities within a container.
-    /// Excludes the supermatter itself.
-    /// All immune entities within the container will be dumped to a given container or the map/grid if that is impossible.
-    /// </summary>
-    /// <param name="hungry"></param>
-    /// <param name="container"></param>
-    /// <param name="sm"></param>
-    /// <param name="outerContainer"></param>
-    private void AshEntitiesInContainer(EntityUid hungry, BaseContainer container, SupermatterComponent sm, BaseContainer? outerContainer = null)
-    {
-        // Removing the immune entities from the container needs to be deferred until after iteration or the iterator raises an error.
-        List<EntityUid> immune = new();
 
-        foreach (var entity in container.ContainedEntities)
-        {
-            if (entity == hungry || !AttemptAshEntity(hungry, entity, sm, outerContainer))
-                immune.Add(entity); // The first check keeps supermatters an admin smited into a locker from ashing themselves.
-                                    // The second check keeps things that have been rendered immune to supermatters from being deleted by a supermatter eating their container.
-        }
-
-        if (outerContainer == container || immune.Count <= 0)
-            return; // The container we are intended to drop immune things to is the same container we are ashing everything in
-                    //  it's a safe bet that we aren't ashing the container entity so there's no reason to eject anything from this container.
-
-        // We need to get the immune things out of the container because the chances are we are about to ash the container, and we don't want them to get deleted despite their immunity.
-        foreach (var entity in immune)
-        {
-            // Attempt to insert immune entities into innermost container at least as outer as outerContainer.
-            var targetContainer = outerContainer;
-            while (targetContainer != null)
-            {
-                if (_containerSystem.Insert(entity, targetContainer))
-                    break;
-
-                _containerSystem.TryGetContainingContainer((targetContainer.Owner, null, null), out targetContainer);
-            }
-
-            // If we couldn't or there was no container to insert into just dump them to the map/grid.
-            if (targetContainer == null)
-                _xformSystem.AttachToGridOrMap(entity);
-        }
-    }
 
     /// <summary>
     /// Makes a supermatter attempt to ash a given entity.
@@ -528,7 +497,7 @@ public sealed class SupermatterSystem : EntitySystem
     /// <param name="sm"></param>
     /// <param name="outerContainer"></param>
     /// <returns></returns>
-    private bool AttemptAshEntity(EntityUid hungry, EntityUid morsel, SupermatterComponent sm, BaseContainer? outerContainer = null)
+    private bool AttemptAshEntity(EntityUid hungry, EntityUid morsel, SupermatterComponent sm, BaseContainer? outerContainer = null, bool fromTree = false)
     {
         if (!CanAshEntity(hungry, morsel, sm))
             return false;
@@ -542,7 +511,7 @@ public sealed class SupermatterSystem : EntitySystem
         if (Name(morsel) == "ash")
             return false;
 
-        AshEntity(hungry, morsel, sm, outerContainer);
+        AshEntity(hungry, morsel, sm, outerContainer, fromTree);
         return true;
     }
 
@@ -567,7 +536,7 @@ public sealed class SupermatterSystem : EntitySystem
     /// <param name="morsel"></param>
     /// <param name="sm"></param>
     /// <param name="outerContainer"></param>
-    private void AshEntity(EntityUid hungry, EntityUid morsel, SupermatterComponent sm, BaseContainer? outerContainer = null)
+    private void AshEntity(EntityUid hungry, EntityUid morsel, SupermatterComponent sm, BaseContainer? outerContainer = null, bool fromTree = false)
     {
         if (EntityManager.IsQueuedForDeletion(morsel)) // already handled, and we're substepping
             return;
@@ -579,8 +548,8 @@ public sealed class SupermatterSystem : EntitySystem
         }
 
         QueueDel(morsel);
-        var evSelf = new EntityAshedBySupermatterEvent(morsel, hungry, sm, outerContainer);
-        var evEaten = new SupermatterConsumedEntityEvent(morsel, hungry, sm, outerContainer);
+        var evSelf = new EntityAshedBySupermatterEvent(morsel, hungry, sm, outerContainer, fromTree);
+        var evEaten = new SupermatterAshedEntityEvent(morsel, hungry, sm, outerContainer, fromTree );
         RaiseLocalEvent(hungry, ref evSelf);
         RaiseLocalEvent(morsel, ref evEaten);
     }
@@ -596,6 +565,7 @@ public sealed class SupermatterSystem : EntitySystem
     /// <param name="args"></param>
     private void OnAshed(EntityUid uid,SupermatterComponent sm, EntityAshedBySupermatterEvent args)
     {
+        int count = 1;
         if (HasComp<MobStateComponent>(args.Entity))
         {
             var mob = Comp<MobStateComponent>(args.Entity);
@@ -605,21 +575,34 @@ public sealed class SupermatterSystem : EntitySystem
             if (!TryComp<MobSizeComponent>(args.Entity, out var size))
                 return;
             var power = size.SizeProto?.SmPower ?? 0f;
-            sm.PowerPool += power;
+            sm.Power += power;
             sm.Integrity -= power / sm.IntegrityDivisor;
         }
         else
         {
+
+
+            if (TryComp<StackComponent>(args.Entity, out var stack))
+                count = stack.Count;
             if (!TryComp<PhysicsComponent>(args.Entity, out var phys))
                 return;
             if (phys.Mass == 0)
                 return;
-            sm.PowerPool += phys.Mass;
-            sm.AbsorptionHealingPool += phys.Mass;
+            sm.PowerPool += phys.Mass * count;
+            sm.AbsorptionHealingPool += phys.Mass * count;
         }
-        var coords = Transform(args.Entity).Coordinates;
-        SpawnAtPosition("Ash", coords);
 
+        if (args.FromContainerTree || HasComp<ContainerManagerComponent>(args.Entity) )
+            return;
+        var coords = Transform(args.Entity).Coordinates;
+        var ash = SpawnAtPosition("Ash", coords);
+        if (count > 1)
+        {
+            var meta = MetaData(ash);
+            var baseDesc = meta.EntityDescription;
+            var newDesc = $"{baseDesc} It contains the remains of {count} things.";
+            _metaDataSystem.SetEntityDescription(ash, newDesc, meta);
+        }
     }
 
     /// <summary>
@@ -629,70 +612,10 @@ public sealed class SupermatterSystem : EntitySystem
     /// <param name="comp"></param>
     /// <param name="args"></param>
     /// <typeparam name="TComp"></typeparam>
-    private static void PreventConsume<TComp>(EntityUid uid, TComp comp, ref SupermatterAttemptConsumeEntityEvent args)
+    private static void PreventAshing<TComp>(EntityUid uid, TComp comp, ref SupermatterAttemptConsumeEntityEvent args)
     {
         if (!args.Cancelled)
             args.Cancelled = true;
-    }
-
-    /// <summary>
-    /// Recursively ash all entities within a container that is ashed by the supermatter.
-    /// If an entity within an ashed container cannot be ashed itself it is removed from the container.
-    /// </summary>
-    /// <param name="uid"></param>
-    /// <param name="comp"></param>
-    /// <param name="args"></param>
-    private void OnContainerConsumed(EntityUid uid, ContainerManagerComponent comp, ref SupermatterConsumedEntityEvent args)
-    {
-        var dropContainer = args.Container;
-        if (dropContainer is null)
-            _containerSystem.TryGetContainingContainer((uid, null, null), out dropContainer);
-
-        foreach (var container in _containerSystem.GetAllContainers(uid))
-        {
-            AshEntitiesInContainer(args.SupermatterUid, container, args.Supermatter, dropContainer);
-        }
-    }
-    /// <summary>
-    /// Prevents two supermatters from annihilating one another.
-    /// Specifically prevents supermatters from absorbing themselves.
-    /// Also ensures that if this supermatter has already been absorbed by another supermatter it cannot be absorbed again.
-    /// </summary>
-    /// <param name="uid"></param>
-    /// <param name="comp"></param>
-    /// <param name="args"></param>
-    private void OnAnotherSupermatterAttemptAbsorbThisSupermatter(EntityUid uid, SupermatterComponent comp, ref SupermatterAttemptConsumeEntityEvent args)
-    {
-        if (!args.Cancelled && (args.Supermatter == comp || comp.BeingAbsorbedByAnotherSupermatter))
-            args.Cancelled = true;
-    }
-
-    /// <summary>
-    /// Prevents two supermatters from annihilating one another.
-    /// Specifically ensures if this supermatter is absorbed by another supermatter it knows that it has been absorbed.
-    /// </summary>
-    /// <param name="uid"></param>
-    /// <param name="comp"></param>
-    /// <param name="args"></param>
-    private static void OnAnotherSupermatterAbsorbedThisSupermatter(EntityUid uid, SupermatterComponent comp, ref SupermatterConsumedEntityEvent args)
-    {
-        comp.BeingAbsorbedByAnotherSupermatter = true;
-    }
-
-    /// <summary>
-    /// Handles supermatters deciding to escape containers they are inserted into.
-    /// Delegates the actual escape to <see cref="OnSupermatterContained(SupermatterContainedEvent)" /> on a delay.
-    /// This ensures that the escape is handled after all other handlers for the insertion event and satisfies the assertion that
-    ///     the inserted entity SHALL be inside of the specified container after all handles to the entity event
-    ///     <see cref="EntGotInsertedIntoContainerMessage" /> are processed.
-    /// </summary>
-    /// <param name="uid"></param>
-    /// <param name="comp"></param>
-    /// <param name="args"></param>
-    private void OnSupermatterContained(EntityUid uid, SupermatterComponent comp, EntGotInsertedIntoContainerMessage args)
-    {
-        // Delegates processing an event until all queued events have been processed.
-        QueueLocalEvent(new SupermatterContainedEvent(uid, comp, args));
     }
 
     /// <summary>
@@ -717,8 +640,234 @@ public sealed class SupermatterSystem : EntitySystem
         if (AttemptAshEntity(uid, containerEntity, comp))
             return; // If we ash the entity we also ash everything in the containers it has.
 
-        AshEntitiesInContainer(uid, args.Args.Container, comp, args.Args.Container);
+        AshContainerTree(uid, containerEntity, comp, args.Args.Container);
     }
+
+    /// <summary>
+    /// Recursively ash all entities within a container that is ashed by the supermatter.
+    /// If an entity within an ashed container cannot be ashed itself it is removed from the container.
+    /// </summary>
+    /// <param name="uid"></param>
+    /// <param name="comp"></param>
+    /// <param name="args"></param>
+    private void OnContainerAshed(EntityUid uid, ContainerManagerComponent comp, ref SupermatterAshedEntityEvent args)
+    {
+        if (args.Container != null)
+            return;
+
+        var dropContainer = args.Container;
+        if (dropContainer is null)
+            _containerSystem.TryGetContainingContainer((uid, null, null), out dropContainer);
+
+        AshContainerTree(args.SupermatterUid, args.Entity, args.Supermatter, dropContainer);
+    }
+
+    /// <summary>
+    /// Makes a list of all entities in the container tree
+    /// </summary>
+    /// <param name="hungry"></param>
+    /// <param name="morsel"></param>
+    /// <param name="sm"></param>
+    /// <param name="outerContainer"></param>
+    private void AshContainerTree(EntityUid hungry, EntityUid morsel, SupermatterComponent sm, BaseContainer? outerContainer)
+    {
+        if (_containerSystem.TryGetContainingContainer((morsel, null, null), out var parent))
+            return;
+
+        List<BaseContainer> allContainers = new();
+        CollectAllContainers(morsel, allContainers);
+
+        List<EntityUid> allEntities = new();
+        if (!HasComp<SolutionContainerManagerComponent>(morsel))
+            allEntities.Add(morsel);
+
+        CollectAllEntities(allContainers, allEntities);
+
+        // Step 3: Ash them
+        AshCollectedEntities(hungry, sm, outerContainer, morsel, allEntities);
+    }
+
+    /// <summary>
+    /// RECURSION ALERT
+    /// Recursive Depth‑First Search of all containers
+    /// We love Recursion
+    /// Explores the container tree as deep as possible before backing up and going down the next branch on the tree.
+    /// </summary>
+    /// <param name="uid"></param>
+    /// <param name="results"></param>
+    private void CollectAllContainers(EntityUid uid, List<BaseContainer> results)
+    {
+        if (!HasComp<ContainerManagerComponent>(uid))
+            return;
+        foreach (var container in _containerSystem.GetAllContainers(uid))
+        {
+            results.Add(container);
+
+            foreach (var entity in container.ContainedEntities)
+            {
+                CollectAllContainers(entity, results);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Iterative Depth‑First Search of all containers.
+    /// Explores the container tree as deep as possible before backing up and going down the next branch on the tree.
+    /// </summary>
+    /// <param name="root"></param>
+    /// <param name="results"></param>
+    private void CollectAllContainersIterative(EntityUid root, List<BaseContainer> results)
+    {
+        Stack<EntityUid> stack = new();
+        stack.Push(root);
+
+        while (stack.Count > 0)
+        {
+            var uid = stack.Pop();
+
+            foreach (var container in _containerSystem.GetAllContainers(uid))
+            {
+                results.Add(container);
+
+                foreach (var entity in container.ContainedEntities)
+                {
+                    stack.Push(entity);
+                }
+            }
+        }
+    }
+
+
+    /// <summary>
+    /// Finds all the entities in a list of containers
+    /// </summary>
+    /// <param name="containers"></param>
+    /// <param name="results"></param>
+    private void CollectAllEntities(List<BaseContainer> containers, List<EntityUid> results)
+    {
+        foreach (var container in containers)
+        {
+            foreach (var entity in container.ContainedEntities)
+            {
+                results.Add(entity);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Ashes all entities in a list of entities
+    /// </summary>
+    /// <param name="hungry"></param>
+    /// <param name="sm"></param>
+    /// <param name="outerContainer"></param>
+    /// <param name="morsel"></param>
+    /// <param name="allEntities"></param>
+    private void AshCollectedEntities(EntityUid hungry, SupermatterComponent sm, BaseContainer? outerContainer, EntityUid morsel, List<EntityUid> allEntities)
+    {
+        List<EntityUid> immune = new();
+        int ashedCount = 0;
+        if (TryComp<StackComponent>(morsel, out var morselStack))
+        {
+            ashedCount += morselStack.Count;
+            if (HasComp<SolutionContainerManagerComponent>(morsel))
+                ashedCount -= 1;
+        }
+
+        foreach (var entity in allEntities)
+        {
+            if (entity == hungry || !AttemptAshEntity(hungry, entity, sm, outerContainer, fromTree: true))
+            {
+                // The first check keeps supermatters an admin smited into a locker from ashing themselves.
+                // The second check keeps things that have been rendered immune to supermatters from being deleted by a supermatter eating their container.
+                immune.Add(entity);
+                continue;
+            }
+            if (TryComp<StackComponent>(entity, out var stack))
+            {
+                ashedCount += stack.Count;
+                if (HasComp<SolutionContainerManagerComponent>(entity))
+                    ashedCount -= 2;
+            }
+            ashedCount++;
+        }
+        if (ashedCount  > 0)
+        {
+            var coords = Transform(morsel).Coordinates;
+            var ash = SpawnAtPosition("Ash", coords);
+
+            // Set description
+            if (ashedCount > 1)
+            {
+                var meta = MetaData(ash);
+                var baseDesc = meta.EntityDescription; // "This used to be something, but now it's not."
+                var newDesc = $"{baseDesc} It contains the remains of {ashedCount} things.";
+                _metaDataSystem.SetEntityDescription(ash,newDesc, meta);
+            }
+        }
+
+        // Eject immune items if needed
+        foreach (var entity in immune)
+        {
+            var target = outerContainer;
+
+            while (target != null)
+            {
+                if (_containerSystem.Insert(entity, target))
+                    break;
+
+                _containerSystem.TryGetContainingContainer((target.Owner, null, null), out target);
+            }
+
+            if (target == null)
+                _xformSystem.AttachToGridOrMap(entity);
+        }
+    }
+
+
+
+    /// <summary>
+    /// Prevents two supermatters from annihilating one another.
+    /// Specifically prevents supermatters from absorbing themselves.
+    /// Also ensures that if this supermatter has already been absorbed by another supermatter it cannot be absorbed again.
+    /// </summary>
+    /// <param name="uid"></param>
+    /// <param name="comp"></param>
+    /// <param name="args"></param>
+    private void OnAnotherSupermatterAttemptAbsorbThisSupermatter(EntityUid uid, SupermatterComponent comp, ref SupermatterAttemptConsumeEntityEvent args)
+    {
+        if (!args.Cancelled && (args.Supermatter == comp || comp.BeingAbsorbedByAnotherSupermatter))
+            args.Cancelled = true;
+    }
+
+    /// <summary>
+    /// Prevents two supermatters from annihilating one another.
+    /// Specifically ensures if this supermatter is absorbed by another supermatter it knows that it has been absorbed.
+    /// </summary>
+    /// <param name="uid"></param>
+    /// <param name="comp"></param>
+    /// <param name="args"></param>
+    private static void OnAnotherSupermatterAbsorbedThisSupermatter(EntityUid uid, SupermatterComponent comp, ref SupermatterAshedEntityEvent args)
+    {
+        comp.BeingAbsorbedByAnotherSupermatter = true;
+    }
+
+    /// <summary>
+    /// Handles supermatters deciding to escape containers they are inserted into.
+    /// Delegates the actual escape to <see cref="OnSupermatterContained(SupermatterContainedEvent)" /> on a delay.
+    /// This ensures that the escape is handled after all other handlers for the insertion event and satisfies the assertion that
+    ///     the inserted entity SHALL be inside of the specified container after all handles to the entity event
+    ///     <see cref="EntGotInsertedIntoContainerMessage" /> are processed.
+    /// </summary>
+    /// <param name="uid"></param>
+    /// <param name="comp"></param>
+    /// <param name="args"></param>
+    private void OnSupermatterContained(EntityUid uid, SupermatterComponent comp, EntGotInsertedIntoContainerMessage args)
+    {
+        // Delegates processing an event until all queued events have been processed.
+        QueueLocalEvent(new SupermatterContainedEvent(uid, comp, args));
+    }
+
+
     #endregion
 
     /// <summary>

@@ -7,7 +7,7 @@ namespace Content.Server._Funkystation.SM.Events;
 /// Event raised on the entity being consumed whenever a supermatter consumes an entity.
 /// </summary>
 [ByRefEvent]
-public readonly record struct SupermatterConsumedEntityEvent(EntityUid entity, EntityUid supermatterUid, SupermatterComponent supermatter, BaseContainer? container)
+public readonly record struct SupermatterAshedEntityEvent(EntityUid entity, EntityUid supermatterUid, SupermatterComponent supermatter, BaseContainer? container , bool fromTree)
 {
     /// <summary>
     /// The entity being consumed by the supermatter.
@@ -29,4 +29,6 @@ public readonly record struct SupermatterConsumedEntityEvent(EntityUid entity, E
     /// Used to correctly dump out the contents containers that are consumed by the supermatter.
     /// </summary>
     public readonly BaseContainer? Container = container;
+
+    public readonly bool FromContainerTree = fromTree;
 }
