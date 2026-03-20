@@ -32,7 +32,7 @@ public sealed partial class SupermatterComponent : SharedSupermatterComponent
     [ViewVariables(VVAccess.ReadOnly)]
     public bool Delaminated = false;
     [DataField("roomTemp")]
-    public float RoomTemp = 293.15f;
+    public float NeutralEnthalpyTemperature = 293.15f;
 
 
 

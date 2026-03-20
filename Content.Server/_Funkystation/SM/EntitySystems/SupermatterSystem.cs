@@ -255,7 +255,7 @@ public sealed class SupermatterSystem : EntitySystem
     private void ApplyEnthalpy( SupermatterComponent sm)
     {
         var deltaEnergy = sm.Enthalpy * 1_000_000f; // MJ → joules
-        sm.Power = sm.Enthalpy * (sm.AbsorbedGas.Temperature - sm.RoomTemp); // temperature - room temperature in Kelvin
+        sm.Power = sm.Enthalpy * (sm.AbsorbedGas.Temperature - sm.NeutralEnthalpyTemperature); // temperature - room temperature in Kelvin
         _atmosphereSystem.AddHeat(sm.AbsorbedGas, deltaEnergy);
     }
 
@@ -365,17 +365,7 @@ public sealed class SupermatterSystem : EntitySystem
             sm.AbsorptionHealingPool -= sm.AbsorptionHealingCost;
         }
 
-        var unclamped = delta;
-        var cap = sm.IntegrityChangeCap;
-
-        var clamped = Math.Clamp(delta, -cap, cap);
-
-        if (unclamped > cap)
-            clamped = cap + (unclamped - delta);
-
-        sm.Integrity += clamped;
-
-        sm.Integrity = Math.Clamp(sm.Integrity, 0f, sm.MaxIntegrity);
+        sm.Integrity += Math.Clamp(delta, -sm.IntegrityChangeCap, sm.IntegrityChangeCap);
     }
 
     /// <summary>
