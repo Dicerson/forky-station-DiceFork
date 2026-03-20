@@ -627,11 +627,14 @@ public sealed class SupermatterSystem : EntitySystem
         {
             if (!TryComp<PhysicsComponent>(args.Entity, out var phys))
                 return;
+            if (phys.Mass == 0)
+                return;
             sm.PowerPool += phys.Mass;
             sm.AbsorptionHealingPool += phys.Mass;
         }
         var coords = Transform(args.Entity).Coordinates;
         SpawnAtPosition("Ash", coords);
+
     }
 
     /// <summary>
