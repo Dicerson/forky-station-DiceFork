@@ -25,10 +25,16 @@ public readonly record struct GasCharacteristics(
     float Conductivity,
     float Enthalpy
 );
+[Serializable, NetSerializable]
 public enum GasCharacteristicsType
 {
     Stability,
     Growth,
     Conductivity,
     Enthalpy,
+}
+[Serializable, NetSerializable]
+public enum SupermatterVisualKeys : byte
+{
+    State
 }

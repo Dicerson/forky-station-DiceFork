@@ -51,8 +51,6 @@
     intensity: 0
 
   - type: Damageable
-  - type: Physics
-    bodyType: Static
   - type: Fixtures
     fixtures:
       fix1:
@@ -97,7 +95,6 @@
   - type: Pullable
   - type: Clickable
   - type: InteractionOutline
-  - type: Physics
   - type: Appearance
   - type: GenericVisualizer
     visuals:
