@@ -57,6 +57,8 @@ public sealed class SupermatterSystem : EntitySystem
         SubscribeLocalEvent<PrototypesReloadedEventArgs>(OnPrototypesReloaded);
         SubscribeLocalEvent<ContainerManagerComponent, SupermatterAshedEntityEvent>(OnContainerAshed);
         SubscribeLocalEvent<SupermatterComponent, DamageChangedEvent>(OnDamage);
+        SubscribeLocalEvent<SupermatterComponent, EmbedEvent>(OnEmbed);
+        SubscribeLocalEvent<SupermatterComponent, ProjectileEmbedEvent>(OnProjectileEmbed);
         LoadGasCharacteristics();
     }
 
@@ -906,5 +908,21 @@ public sealed class SupermatterSystem : EntitySystem
             return;
 
         sm.PowerPool += totalDamage;
+    }
+
+    private void OnEmbed(EntityUid uid, SupermatterComponent sm, ref EmbedEvent args)
+    {
+        Logger.Info("Supermatter? " + HasComp<SupermatterComponent>(uid));
+        Logger.Info("Supermatter? " + HasComp<SupermatterComponent>(args.Embedded));
+
+        AttemptAshEntity(uid, args.Embedded, sm);
+    }
+
+    private void OnProjectileEmbed(EntityUid uid, SupermatterComponent sm, ref ProjectileEmbedEvent args)
+    {
+        Logger.Info("Supermatter? " + HasComp<SupermatterComponent>(uid));
+        Logger.Info("Supermatter? " + HasComp<SupermatterComponent>(args.Embedded));
+
+        AttemptAshEntity(uid, args.Embedded, sm);
     }
 }
