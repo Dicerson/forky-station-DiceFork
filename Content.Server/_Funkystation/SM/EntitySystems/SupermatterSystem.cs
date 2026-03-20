@@ -47,7 +47,7 @@ public sealed class SupermatterSystem : EntitySystem
         SubscribeLocalEvent<SupermatterComponent, AtmosDeviceUpdateEvent>(OnProcessSupermatter);
         SubscribeLocalEvent<MapGridComponent, SupermatterAttemptConsumeEntityEvent>(PreventAshing);
         SubscribeLocalEvent<StationDataComponent, SupermatterAttemptConsumeEntityEvent>(PreventAshing);
-        SubscribeLocalEvent<ProjectileComponent, SupermatterAttemptConsumeEntityEvent>(PreventAshing);
+        SubscribeLocalEvent<ProjectileComponent, SupermatterAttemptConsumeEntityEvent>(PreventAshingProjectile);
         SubscribeLocalEvent<SupermatterComponent, EntGotInsertedIntoContainerMessage>(OnSupermatterContained);
         SubscribeLocalEvent<SupermatterContainedEvent>(OnSupermatterContained);
         SubscribeLocalEvent<SupermatterComponent, SupermatterAttemptConsumeEntityEvent>(OnAnotherSupermatterAttemptAbsorbThisSupermatter);
@@ -618,6 +618,15 @@ public sealed class SupermatterSystem : EntitySystem
             args.Cancelled = true;
     }
 
+    private void PreventAshingProjectile(EntityUid uid, ProjectileComponent comp, ref SupermatterAttemptConsumeEntityEvent args)
+    {
+        if (HasComp<EmbeddableProjectileComponent>(uid))
+            return;
+
+        args.Cancelled = true;
+    }
+
+
     /// <summary>
     /// Handles supermatters attempting to escape containers they have been inserted into.
     /// If the supermatter has not been absorbed by another supermatter this handles making the supermatter ash the containing
@@ -678,9 +687,7 @@ public sealed class SupermatterSystem : EntitySystem
         CollectAllContainers(morsel, allContainers);
 
         List<EntityUid> allEntities = new();
-        if (!HasComp<SolutionContainerManagerComponent>(morsel))
-            allEntities.Add(morsel);
-
+        allEntities.Add(morsel);
         CollectAllEntities(allContainers, allEntities);
 
         // Step 3: Ash them
@@ -705,6 +712,8 @@ public sealed class SupermatterSystem : EntitySystem
 
             foreach (var entity in container.ContainedEntities)
             {
+                if (HasComp<SolutionContainerManagerComponent>(entity))
+                    continue;
                 CollectAllContainers(entity, results);
             }
         }
@@ -731,6 +740,8 @@ public sealed class SupermatterSystem : EntitySystem
 
                 foreach (var entity in container.ContainedEntities)
                 {
+                    if (HasComp<SolutionContainerManagerComponent>(entity))
+                        continue;
                     stack.Push(entity);
                 }
             }
@@ -765,14 +776,7 @@ public sealed class SupermatterSystem : EntitySystem
     private void AshCollectedEntities(EntityUid hungry, SupermatterComponent sm, BaseContainer? outerContainer, EntityUid morsel, List<EntityUid> allEntities)
     {
         List<EntityUid> immune = new();
-        int ashedCount = 0;
-        if (TryComp<StackComponent>(morsel, out var morselStack))
-        {
-            ashedCount += morselStack.Count;
-            if (HasComp<SolutionContainerManagerComponent>(morsel))
-                ashedCount -= 1;
-        }
-
+        var ashedCount = 0;
         foreach (var entity in allEntities)
         {
             if (entity == hungry || !AttemptAshEntity(hungry, entity, sm, outerContainer, fromTree: true))
@@ -785,10 +789,15 @@ public sealed class SupermatterSystem : EntitySystem
             if (TryComp<StackComponent>(entity, out var stack))
             {
                 ashedCount += stack.Count;
-                if (HasComp<SolutionContainerManagerComponent>(entity))
-                    ashedCount -= 2;
+                if (HasComp<SolutionContainerManagerComponent>(entity)) // Ideally this check is not needed but because morsel does not get filtered it's needed
+                    ashedCount -= 1;
+
             }
-            ashedCount++;
+            else
+            {
+                ashedCount++;
+            }
+
         }
         if (ashedCount  > 0)
         {
