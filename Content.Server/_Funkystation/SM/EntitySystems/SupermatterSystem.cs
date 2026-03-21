@@ -219,10 +219,11 @@ public sealed class SupermatterSystem : EntitySystem
         }
 
         // conversion to percentage
-        //sm.Stability    = stability / 100f;
-        //sm.Growth       = growth / 100f;
-        //sm.Conductivity = conductivity / 100f;
-        //sm.Enthalpy     = enthalpy / 100f;
+        sm.Stability    += stability / 100f;
+        sm.Stability = Math.Min(sm.Stability, sm.NeutralStability);
+        sm.Growth       += growth / 100f;
+        sm.Conductivity += conductivity / 100f;
+        sm.Enthalpy     += enthalpy / 100f;
 
     }
 
@@ -624,7 +625,6 @@ public sealed class SupermatterSystem : EntitySystem
     {
         if (HasComp<EmbeddableProjectileComponent>(uid))
             return;
-
         args.Cancelled = true;
     }
 

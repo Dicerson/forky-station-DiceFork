@@ -7,7 +7,7 @@ using Robust.Shared.Serialization;
 namespace Content.Server._Funkystation.SM.Components;
 
 [RegisterComponent]
-[Access(typeof(SupermatterSystem))]
+[Access(typeof(SupermatterSystem), typeof(SupermatterLightningSystem))]
 public sealed partial class SupermatterComponent : SharedSupermatterComponent
 {
     // --- Core State ---
@@ -22,7 +22,7 @@ public sealed partial class SupermatterComponent : SharedSupermatterComponent
     [DataField("absorptionHealing")]
     public float AbsorptionHealing = 1f;
     [DataField("ratioPerTile")]
-    public float RatioPerTile = 0.09f;
+    public float RatioPerTile = 0.05f;
     [DataField("vacuumThreshold")]
     public float VacuumThreshold = 10f;
     [DataField("currentRadiation")]
@@ -106,6 +106,12 @@ public sealed partial class SupermatterComponent : SharedSupermatterComponent
     // --- Lightning ---
     [DataField("lightningTimer")]
     public float LightningTimer;
+    [DataField("lightningRange")]
+    public float LightningRange;
+    [DataField("powerPerBolt")]
+    public float PowerPerBolt;
+    [DataField("maxBolts")]
+    public float MaxBolts;
 
     // --- Cached Values for Visuals ---
     [DataField("lastTemperature")]

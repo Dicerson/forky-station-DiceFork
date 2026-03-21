@@ -40,7 +40,7 @@
     integrityDivisor: 10
     vacuumDamagePerTile: 0.5
     vacuumThreshold: 10
-    ratioPerTile: 0.09
+    ratioPerTile: 0.05
     RadiationDamageTypes:
     - Radiation
     AbsorbedGas: {}
@@ -91,6 +91,9 @@
     guides:
     - Supermatter
     - Power
+  - type: GravityWell # To make the supermatter attract things cause we evil :).
+    baseRadialAcceleration: 10
+    maxRange: 4
   - type: SinguloFood
     energy: 10000
   - type: Pullable
