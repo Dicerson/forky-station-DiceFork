@@ -19,6 +19,7 @@ using Content.Shared.Radiation.Components;
 using Content.Shared.Stacks;
 using Content.Shared.Station.Components;
 using Content.Shared.Tag;
+using Content.Shared.Throwing;
 using Robust.Server.GameObjects;
 using Robust.Shared.Containers;
 using Robust.Shared.Map.Components;
@@ -57,8 +58,8 @@ public sealed class SupermatterSystem : EntitySystem
         SubscribeLocalEvent<PrototypesReloadedEventArgs>(OnPrototypesReloaded);
         SubscribeLocalEvent<ContainerManagerComponent, SupermatterAshedEntityEvent>(OnContainerAshed);
         SubscribeLocalEvent<SupermatterComponent, DamageChangedEvent>(OnDamage);
-        SubscribeLocalEvent<SupermatterComponent, EmbedEvent>(OnEmbed);
-        SubscribeLocalEvent<SupermatterComponent, ProjectileEmbedEvent>(OnProjectileEmbed);
+        SubscribeLocalEvent<SupermatterComponent, ThrowHitByEvent>(OnEmbed);
+
         LoadGasCharacteristics();
     }
 
@@ -910,19 +911,10 @@ public sealed class SupermatterSystem : EntitySystem
         sm.PowerPool += totalDamage;
     }
 
-    private void OnEmbed(EntityUid uid, SupermatterComponent sm, ref EmbedEvent args)
+    private void OnEmbed(EntityUid uid, SupermatterComponent sm, ref ThrowHitByEvent args)
     {
-        Logger.Info("Supermatter? " + HasComp<SupermatterComponent>(uid));
-        Logger.Info("Supermatter? " + HasComp<SupermatterComponent>(args.Embedded));
 
-        AttemptAshEntity(uid, args.Embedded, sm);
+        AttemptAshEntity(args.Target, args.Thrown, sm);
     }
 
-    private void OnProjectileEmbed(EntityUid uid, SupermatterComponent sm, ref ProjectileEmbedEvent args)
-    {
-        Logger.Info("Supermatter? " + HasComp<SupermatterComponent>(uid));
-        Logger.Info("Supermatter? " + HasComp<SupermatterComponent>(args.Embedded));
-
-        AttemptAshEntity(uid, args.Embedded, sm);
-    }
 }
