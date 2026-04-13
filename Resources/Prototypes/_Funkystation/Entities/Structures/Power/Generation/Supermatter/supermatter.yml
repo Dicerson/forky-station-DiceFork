@@ -15,9 +15,11 @@
       shader: unshaded
 
   - type: Supermatter
+    activated: true
     power: 0
     integrity: 1000
     maxIntegrity: 1000
+    delamTimer: 30
     baseRadiation: 3
     powerPercentage: 0.005
     radiationDamageMultiplier: 10
@@ -44,6 +46,8 @@
     RadiationDamageTypes:
     - Radiation
     AbsorbedGas: {}
+    anomalyMinPower: 5000
+    anomalyMinConductivity: 0
 
   - type: AtmosDevice
     requireAnchored: false
@@ -91,9 +95,10 @@
     guides:
     - Supermatter
     - Power
-  - type: GravityWell # To make the supermatter attract things cause we evil :).
-    baseRadialAcceleration: 10
-    maxRange: 4
+  - type: DeviceLinkSource
+    ports:
+    - SupermatterInactive
+    - SupermatterNormal
   - type: SinguloFood
     energy: 10000
   - type: Pullable

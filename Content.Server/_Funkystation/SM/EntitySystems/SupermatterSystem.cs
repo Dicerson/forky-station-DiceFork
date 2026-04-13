@@ -1,17 +1,21 @@
-﻿using Content.Server._Funkystation.SM.Components;
+using Content.Server._Funkystation.SM.Components;
 using Content.Server._Funkystation.SM.Events;
 using Content.Server.Administration.Logs;
 using Content.Server.Atmos.EntitySystems;
 using Content.Server.Atmos.Piping.Components;
+using Content.Server.Singularity.Components;
 using Content.Shared._Funkystation.Mobs;
+using Content.Shared._Funkystation.SM;
 using Content.Shared._Funkystation.SM.Components;
 using Content.Shared._Funkystation.SM.Prototypes;
 using Content.Shared.Atmos;
+using Content.Shared.CCVar;
 using Content.Shared.Audio;
 using Content.Shared.Chat.Prototypes;
 using Content.Shared.Chemistry.Components.SolutionManager;
 using Content.Shared.Damage.Systems;
 using Content.Shared.Database;
+using Content.Shared.Interaction;
 using Content.Shared.Mind.Components;
 using Content.Shared.Mobs;
 using Content.Shared.Mobs.Components;
@@ -29,9 +33,9 @@ using Robust.Shared.Containers;
 using Robust.Shared.Map.Components;
 using Robust.Shared.Physics.Components;
 using Robust.Shared.Physics.Events;
+using Robust.Shared.Configuration;
+using Robust.Shared.Maths;
 using Robust.Shared.Prototypes;
-
-
 namespace Content.Server._Funkystation.SM.EntitySystems;
 
 public sealed class SupermatterSystem : EntitySystem
@@ -45,6 +49,7 @@ public sealed class SupermatterSystem : EntitySystem
     [Dependency] private readonly SharedTransformSystem _xformSystem = default!;
     [Dependency] private readonly MetaDataSystem _metaDataSystem = default!;
     [Dependency] private readonly SharedAudioSystem _audio = default!;
+    [Dependency] private readonly IConfigurationManager _cfg = default!;
 
 
     private static readonly ProtoId<TagPrototype> HighRiskItemTag = "HighRiskItem";
@@ -53,6 +58,7 @@ public sealed class SupermatterSystem : EntitySystem
         base.Initialize();
 
         SubscribeLocalEvent<SupermatterComponent, AtmosDeviceUpdateEvent>(OnProcessSupermatter);
+        SubscribeLocalEvent<SupermatterComponent, MapInitEvent>(OnSupermatterMapInit);
         SubscribeLocalEvent<MapGridComponent, SupermatterAttemptConsumeEntityEvent>(PreventAshing);
         SubscribeLocalEvent<StationDataComponent, SupermatterAttemptConsumeEntityEvent>(PreventAshing);
         SubscribeLocalEvent<ProjectileComponent, SupermatterAttemptConsumeEntityEvent>(PreventAshingProjectile);
@@ -66,8 +72,38 @@ public sealed class SupermatterSystem : EntitySystem
         SubscribeLocalEvent<ContainerManagerComponent, SupermatterAshedEntityEvent>(OnContainerAshed);
         SubscribeLocalEvent<SupermatterComponent, DamageChangedEvent>(OnDamage);
         SubscribeLocalEvent<SupermatterComponent, ThrowHitByEvent>(OnEmbed);
+        SubscribeLocalEvent<SupermatterComponent, InteractHandEvent>(OnInteractHand);
+        SubscribeLocalEvent<SupermatterComponent, InteractUsingEvent>(OnInteractUsing);
+        SubscribeLocalEvent<SupermatterImmuneComponent, SupermatterAttemptConsumeEntityEvent>(OnImmuneCancelAshing);
 
         LoadGasCharacteristics();
+    }
+
+    /// <summary>
+    /// Prototype sets <see cref="RadiationSourceComponent"/> intensity to 0 until the first atmos tick;
+    /// sync immediately so radiation hazards and tests see non-zero output without waiting for <see cref="AtmosDeviceUpdateEvent"/>.
+    /// </summary>
+    private void OnSupermatterMapInit(EntityUid uid, SupermatterComponent sm, MapInitEvent args)
+    {
+        if (sm.Delaminated)
+            return;
+
+        ComputeRadiation(sm);
+        EmitRadiation(uid, sm);
+    }
+
+    public override void Update(float frameTime)
+    {
+        base.Update(frameTime);
+
+        var query = EntityQueryEnumerator<SupermatterComponent>();
+        while (query.MoveNext(out var uid, out var sm))
+        {
+            if (!sm.Delamming || sm.Delaminated)
+                continue;
+
+            TickDelaminationCountdown(uid, sm, frameTime);
+        }
     }
 
     /// <summary>
@@ -116,23 +152,63 @@ public sealed class SupermatterSystem : EntitySystem
     {
         sm.AbsorbedGas.Clear();
         AbsorbGas(uid, sm, args);
-        ApplyPowerPool(sm);
+        if (sm.Activated)
+            ApplyPowerPool(sm);
         ComputeGasCharacteristics(sm);
         ApplyPowerMultipliers(sm);
         ApplyStability(sm);
         ApplyEnthalpy(sm);
         ApplyGrowth(sm);
+
+        if (!sm.Activated)
+        {
+            sm.Power = 0f;
+            sm.PowerPool = 0f;
+        }
+
         UpdateReproductionAndShards(uid, sm);
         sm.CurrentConductivity = sm.Conductivity;
+
+        if (sm.Delaminated)
+            return;
+
+        // Integrity already zero (e.g. test injection) — begin delam before UpdateIntegrity can heal the crystal.
+        if (!sm.Delaminated && !sm.Delamming && sm.Integrity <= 0)
+            BeginDelaminationCountdown(uid, sm);
+
         UpdateIntegrity(uid, sm);
-        CheckDelamination(uid, sm);
+
+        if (!sm.Delaminated && !sm.Delamming && sm.Integrity <= 0)
+            BeginDelaminationCountdown(uid, sm);
+
         if (sm.Delaminated)
             return;
 
         ComputeRadiation(sm);
         EmitRadiation(uid, sm);
 
+        UpdateWikiItemPull(uid, sm);
+
         ReleaseGas(uid, sm, args);
+
+        sm.DelamBeganThisAtmos = false;
+    }
+
+    /// <summary>
+    /// TG wiki: powered crystal pulls loose items — implemented via a weak <see cref="GravityWellComponent"/>.
+    /// </summary>
+    private void UpdateWikiItemPull(EntityUid uid, SupermatterComponent sm)
+    {
+        if (sm.Delaminated || sm.Power < 1f)
+        {
+            // Avoid GravityWellSystem pulsing with MaxRange 0 (engine asserts positive range).
+            RemComp<GravityWellComponent>(uid);
+            return;
+        }
+
+        var grav = EnsureComp<GravityWellComponent>(uid);
+        grav.MaxRange = Math.Clamp(sm.Power / 2000f, 0.5f, 6f);
+        grav.BaseRadialAcceleration = -3f * Math.Clamp(sm.Power / 5000f, 0.15f, 1f);
     }
 
     /// <summary>
@@ -226,13 +302,11 @@ public sealed class SupermatterSystem : EntitySystem
             enthalpy     += moles * ch.Enthalpy;
         }
 
-        // conversion to percentage
-        sm.Stability    += stability / 100f;
-        sm.Stability = Math.Min(sm.Stability, sm.NeutralStability);
-        sm.Growth       += growth / 100f;
-        sm.Conductivity += conductivity / 100f;
-        sm.Enthalpy     += enthalpy / 100f;
-
+        // Per-tick totals from absorbed gas (base + table contribution), not cumulative across ticks.
+        sm.Stability = Math.Min(stability / 100f, sm.NeutralStability);
+        sm.Growth = growth / 100f;
+        sm.Conductivity = conductivity / 100f;
+        sm.Enthalpy = enthalpy / 100f;
     }
 
     /// <summary>
@@ -346,6 +420,9 @@ public sealed class SupermatterSystem : EntitySystem
     /// <param name="sm"></param>
     private void UpdateReproductionAndShards(EntityUid uid, SupermatterComponent sm)
     {
+        if (HasComp<SupermatterShardComponent>(uid))
+            return;
+
         sm.Reproduction *= sm.ReproductionDecay;
 
         sm.ReproductionProgress += sm.Reproduction;
@@ -366,19 +443,25 @@ public sealed class SupermatterSystem : EntitySystem
     /// <param name="sm"></param>
     private void UpdateIntegrity(EntityUid uid, SupermatterComponent sm)
     {
+        if (sm.Delaminated)
+            return;
+
         var delta = 0f;
 
-        delta += sm.Stability;
+        if (sm.Activated)
+        {
+            // Bias relative to nominal stability so a “perfectly stable” crystal does not out-heal vacuum/power stress each tick.
+            delta += sm.Stability - sm.NeutralStability;
+            delta -= sm.Power / sm.PowerDamageScale;
 
-        delta -= sm.Power / sm.PowerDamageScale;
+            if (sm.Power > sm.VacuumDamageMinPower)
+                delta -= sm.CountVacuumTiles * sm.VacuumDamagePerTile;
 
-        delta -= sm.CountVacuumTiles * sm.VacuumDamagePerTile;
-
-        var gasTemp = sm.AbsorbedGas.Temperature;
-        const float roomTemp = 293.15f;
-
-        var tempDelta = ((gasTemp - roomTemp) / sm.TemperatureDamageScale) * sm.Enthalpy;
-        delta += tempDelta;
+            var gasTemp = sm.AbsorbedGas.Temperature;
+            const float roomTemp = 293.15f;
+            var tempDelta = ((gasTemp - roomTemp) / sm.TemperatureDamageScale) * sm.Enthalpy;
+            delta += tempDelta;
+        }
 
         if (sm.AbsorptionHealingPool > sm.AbsorptionHealingCost)
         {
@@ -386,18 +469,15 @@ public sealed class SupermatterSystem : EntitySystem
             sm.AbsorptionHealingPool -= sm.AbsorptionHealingCost;
         }
 
-        /*if (delta < 0)
-        {
-            if (TryComp<AmbientSoundComponent>(uid, out var ambient))
-            {
-                ambient.
-                ambient.Sound = sm.SoundDelamming; // SoundSpecifier
-                _ambientSoundSystem.SetAmbience(uid, ambient);
-            }
-        }*/
-
         sm.Integrity += Math.Clamp(delta, -sm.IntegrityChangeCap, sm.IntegrityChangeCap);
         sm.Integrity = Math.Clamp(sm.Integrity, 0f, sm.MaxIntegrity);
+
+        // TG wiki: during the final countdown the crystal can recover if integrity heals back above zero.
+        if (sm.Delamming && sm.Integrity > 0f && !sm.DelamBeganThisAtmos)
+        {
+            sm.Delamming = false;
+            sm.DelamCountdown = 0f;
+        }
     }
 
     /// <summary>
@@ -406,15 +486,162 @@ public sealed class SupermatterSystem : EntitySystem
     /// </summary>
     /// <param name="uid"></param>
     /// <param name="sm"></param>
-    private void CheckDelamination(EntityUid uid, SupermatterComponent sm)
+    private void BeginDelaminationCountdown(EntityUid uid, SupermatterComponent sm)
     {
-        if (sm.Integrity > 0 || sm.Delaminated)
-            return;
+        sm.PreferredDelamType = ChooseDelamType(uid, sm);
+        sm.Delamming = true;
+        sm.DelamBeganThisAtmos = true;
+        sm.DelamCountdown = sm.DelamTimerDuration;
+        if (sm.DelamCountdown <= 0)
+            ResolveDelamination(uid, sm);
+    }
+
+    private void TickDelaminationCountdown(EntityUid uid, SupermatterComponent sm, float dt)
+    {
+        sm.DelamCountdown -= dt;
+        if (sm.DelamCountdown <= 0)
+            ResolveDelamination(uid, sm);
+    }
+
+    private void ResolveDelamination(EntityUid uid, SupermatterComponent sm)
+    {
         var dominant = GetDominantCharacteristic(sm);
-        var ev = new SupermatterDelaminationEvent(uid, dominant);
+        var ev = new SupermatterDelaminationEvent(uid, dominant, sm.PreferredDelamType);
         RaiseLocalEvent(uid, ref ev);
         sm.Delaminated = true;
-        //_audio.PlayPvs(sm.SoundDelamming, uid,);
+        sm.Delamming = false;
+        sm.DelamCountdown = 0;
+        _audio.PlayPvs(sm.SoundDelamming, uid);
+    }
+
+    /// <summary>
+    /// TG wiki delamination priority (later wiki list entries beat earlier): cascade &gt; singularity &gt; tesla &gt; default explosion.
+    /// </summary>
+    public DelamType ChooseDelamType(EntityUid uid, SupermatterComponent sm)
+    {
+        if (_cfg.GetCVar(CCVars.SupermatterDoForceDelam))
+        {
+            var forced = _cfg.GetCVar(CCVars.SupermatterForcedDelamType);
+            if (forced >= 0 && forced <= (byte)DelamType.Cascade)
+                return (DelamType)(byte)forced;
+            return DelamType.Explosion;
+        }
+
+        var minNob = _cfg.GetCVar(CCVars.SupermatterCascadeNobMinFraction);
+        var cascadeMoles = _cfg.GetCVar(CCVars.SupermatterCascadeMinAbsorbedMoles);
+        if (_cfg.GetCVar(CCVars.SupermatterDoCascadeDelam) &&
+            AbsorbedMixQualifiesForWikiResonanceCascade(sm.AbsorbedGas, cascadeMoles, minNob))
+            return DelamType.Cascade;
+
+        var singuloNeed = _cfg.GetCVar(CCVars.SupermatterSinguloAbsorbedMolesThreshold) *
+                          _cfg.GetCVar(CCVars.SupermatterSingulooseMolesModifier);
+        if (_cfg.GetCVar(CCVars.SupermatterDoSingulooseDelam) && sm.AbsorbedGas.TotalMoles > singuloNeed)
+            return DelamType.Singulo;
+
+        var powerNeed = _cfg.GetCVar(CCVars.SupermatterPowerPenaltyThreshold) *
+                        _cfg.GetCVar(CCVars.SupermatterTesloosePowerModifier);
+        if (_cfg.GetCVar(CCVars.SupermatterDoTeslooseDelam) && sm.Power > powerNeed)
+            return DelamType.Tesla;
+
+        return DelamType.Explosion;
+    }
+
+    /// <summary>
+    /// TG wiki resonance cascade: both nob gases above fraction threshold in the absorbed mix, total absorbed moles above minimum.
+    /// </summary>
+    public static bool AbsorbedMixQualifiesForWikiResonanceCascade(GasMixture mix, float minTotalMoles, float minNobFraction)
+    {
+        var total = mix.TotalMoles;
+        if (total < minTotalMoles)
+            return false;
+
+        var anti = mix.GetMoles(Gas.AntiNoblium);
+        var hyper = mix.GetMoles(Gas.HyperNoblium);
+        if (anti <= 0f || hyper <= 0f)
+            return false;
+
+        return anti / total > minNobFraction && hyper / total > minNobFraction;
+    }
+
+    /// <summary>
+    /// Integration tests need to set <see cref="SupermatterComponent.Power"/> without tripping Access checks on that component.
+    /// </summary>
+    public void SetPowerForIntegrationTests(EntityUid uid, float power)
+    {
+        var sm = Comp<SupermatterComponent>(uid);
+        sm.Power = power;
+        if (power > 0f)
+            sm.Activated = true;
+    }
+
+    /// <summary>
+    /// Integration tests: wiki “inert until struck” vs powered gas processing.
+    /// </summary>
+    public void SetActivatedForIntegrationTests(EntityUid uid, bool activated)
+    {
+        Comp<SupermatterComponent>(uid).Activated = activated;
+    }
+
+    /// <summary>
+    /// Integration tests: set absorbed gas snapshot for <see cref="ChooseDelamType"/> without running a full atmos tick.
+    /// </summary>
+    public void SetAbsorbedGasForIntegrationTests(EntityUid uid, GasMixture mix)
+    {
+        var sm = Comp<SupermatterComponent>(uid);
+        sm.AbsorbedGas.Clear();
+        _atmosphereSystem.Merge(sm.AbsorbedGas, mix.Clone());
+    }
+
+    /// <summary>
+    /// Integration tests set integrity directly without tripping Access checks.
+    /// </summary>
+    public void SetIntegrityForIntegrationTests(EntityUid uid, float integrity)
+    {
+        var sm = Comp<SupermatterComponent>(uid);
+        sm.Integrity = Math.Clamp(integrity, 0f, sm.MaxIntegrity);
+    }
+
+    /// <summary>
+    /// Percent crystal remaining (0–100), for portable test parity with historical damage-based display.
+    /// </summary>
+    public static float GetIntegrityPercent(SupermatterComponent sm) =>
+        GetIntegrityPercent(sm.Integrity, sm.MaxIntegrity);
+
+    public static float GetIntegrityPercent(float integrity, float maxIntegrity)
+    {
+        if (maxIntegrity <= 0)
+            return 0f;
+        return integrity / maxIntegrity * 100f;
+    }
+
+    private void OnInteractHand(EntityUid uid, SupermatterComponent sm, InteractHandEvent args)
+    {
+        if (args.Handled)
+            return;
+
+        if (HasComp<SupermatterImmuneComponent>(args.User))
+            return;
+
+        if (!AttemptAshEntity(uid, args.User, sm))
+            return;
+
+        args.Handled = true;
+    }
+
+    private void OnInteractUsing(EntityUid uid, SupermatterComponent sm, InteractUsingEvent args)
+    {
+        if (args.Handled)
+            return;
+
+        if (!AttemptAshEntity(uid, args.Used, sm))
+            return;
+
+        args.Handled = true;
+    }
+
+    private void OnImmuneCancelAshing(EntityUid uid, SupermatterImmuneComponent _, ref SupermatterAttemptConsumeEntityEvent args)
+    {
+        args.Cancelled = true;
     }
 
     /// <summary>
@@ -459,6 +686,8 @@ public sealed class SupermatterSystem : EntitySystem
     {
         var baseRadiation = sm.BaseRadiation + (sm.Power * sm.PowerPercentage);
         var stabilityMultiplier = (10f - sm.Stability) / 10f;
+        // Floor so nominal stability still yields measurable output (radiation source + integration tests).
+        stabilityMultiplier = MathF.Max(0.15f, stabilityMultiplier);
         sm.CurrentRadiation = baseRadiation * stabilityMultiplier;
     }
 
@@ -619,6 +848,7 @@ public sealed class SupermatterSystem : EntitySystem
     /// <param name="args"></param>
     private void OnAshed(EntityUid uid,SupermatterComponent sm, EntityAshedBySupermatterEvent args)
     {
+        sm.Activated = true;
         int count = 1;
         if (TryComp<MobStateComponent>(args.Entity, out var mob))
         {
@@ -983,6 +1213,7 @@ public sealed class SupermatterSystem : EntitySystem
         if (totalDamage <= 0)
             return;
 
+        sm.Activated = true;
         sm.PowerPool += totalDamage;
     }
 
