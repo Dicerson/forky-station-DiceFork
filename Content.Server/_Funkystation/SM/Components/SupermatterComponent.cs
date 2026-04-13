@@ -1,6 +1,7 @@
 ﻿using Content.Server._Funkystation.SM.EntitySystems;
 using Content.Shared._Funkystation.SM.Components;
 using Content.Shared.Atmos;
+using Robust.Shared.Audio;
 using Robust.Shared.GameStates;
 using Robust.Shared.Serialization;
 
@@ -51,12 +52,12 @@ public sealed partial class SupermatterComponent : SharedSupermatterComponent
     public float GrowthAbsorptionScale = 45f;
     [DataField("powerPerGasPacket")]
     public float PowerPerGasPacket = 3000f;
-    [DataField("neutralStability")]
-    public float NeutralStability = 10f;
     [DataField("stabilityPowerDrainScale")]
     public float StabilityPowerDrainScale = 0.08f;
     [DataField("baseStability")]
     public float BaseStability = 10f;
+    [DataField("neutralStability")]
+    public float NeutralStability = 10f;
     [DataField("baseGrowth")]
     public float BaseGrowth;
     [DataField("baseConductivity")]
@@ -126,4 +127,23 @@ public sealed partial class SupermatterComponent : SharedSupermatterComponent
     /// </summary>
     [ViewVariables(VVAccess.ReadOnly)]
     public bool BeingAbsorbedByAnotherSupermatter = false;
+
+    // --- Sound effects ---
+    /// <summary>
+    /// Ashing sound
+    /// </summary>
+    [DataField]
+    public SoundPathSpecifier SoundAsh = new("/Audio/_Funkystation/Supermatter/supermatter.ogg");
+    /// <summary>
+    /// Delamming sound
+    /// </summary>
+    [DataField]
+    public SoundPathSpecifier SoundDelamming = new("/Audio/_Funkystation/Supermatter/delamming.ogg");
+    [ViewVariables]
+    public EntityUid? AudioProcess;
+    [ViewVariables]
+    public EntityUid? MobAudioProcess;
+
+    [DataField("screamCutOffTimer")]
+    public float ScreamCutOffTimer = 0.5f;
 }

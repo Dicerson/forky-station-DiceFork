@@ -7,7 +7,8 @@ using Content.Shared._Funkystation.Mobs;
 using Content.Shared._Funkystation.SM.Components;
 using Content.Shared._Funkystation.SM.Prototypes;
 using Content.Shared.Atmos;
-using Content.Shared.Chemistry.Components;
+using Content.Shared.Audio;
+using Content.Shared.Chat.Prototypes;
 using Content.Shared.Chemistry.Components.SolutionManager;
 using Content.Shared.Damage.Systems;
 using Content.Shared.Database;
@@ -16,16 +17,20 @@ using Content.Shared.Mobs;
 using Content.Shared.Mobs.Components;
 using Content.Shared.Projectiles;
 using Content.Shared.Radiation.Components;
+using Content.Shared.Speech.Components;
 using Content.Shared.Stacks;
 using Content.Shared.Station.Components;
 using Content.Shared.Tag;
 using Content.Shared.Throwing;
 using Robust.Server.GameObjects;
+using Robust.Shared.Audio;
+using Robust.Shared.Audio.Systems;
 using Robust.Shared.Containers;
 using Robust.Shared.Map.Components;
 using Robust.Shared.Physics.Components;
 using Robust.Shared.Physics.Events;
 using Robust.Shared.Prototypes;
+
 
 namespace Content.Server._Funkystation.SM.EntitySystems;
 
@@ -39,6 +44,8 @@ public sealed class SupermatterSystem : EntitySystem
     [Dependency] private readonly TransformSystem _transformSystem = default!;
     [Dependency] private readonly SharedTransformSystem _xformSystem = default!;
     [Dependency] private readonly MetaDataSystem _metaDataSystem = default!;
+    [Dependency] private readonly SharedAudioSystem _audio = default!;
+
 
     private static readonly ProtoId<TagPrototype> HighRiskItemTag = "HighRiskItem";
     public override void Initialize()
@@ -117,7 +124,7 @@ public sealed class SupermatterSystem : EntitySystem
         ApplyGrowth(sm);
         UpdateReproductionAndShards(uid, sm);
         sm.CurrentConductivity = sm.Conductivity;
-        UpdateIntegrity(sm);
+        UpdateIntegrity(uid, sm);
         CheckDelamination(uid, sm);
         if (sm.Delaminated)
             return;
@@ -357,7 +364,7 @@ public sealed class SupermatterSystem : EntitySystem
     /// </summary>
     /// <param name="uid"></param>
     /// <param name="sm"></param>
-    private void UpdateIntegrity(SupermatterComponent sm)
+    private void UpdateIntegrity(EntityUid uid, SupermatterComponent sm)
     {
         var delta = 0f;
 
@@ -379,24 +386,35 @@ public sealed class SupermatterSystem : EntitySystem
             sm.AbsorptionHealingPool -= sm.AbsorptionHealingCost;
         }
 
+        /*if (delta < 0)
+        {
+            if (TryComp<AmbientSoundComponent>(uid, out var ambient))
+            {
+                ambient.
+                ambient.Sound = sm.SoundDelamming; // SoundSpecifier
+                _ambientSoundSystem.SetAmbience(uid, ambient);
+            }
+        }*/
+
         sm.Integrity += Math.Clamp(delta, -sm.IntegrityChangeCap, sm.IntegrityChangeCap);
         sm.Integrity = Math.Clamp(sm.Integrity, 0f, sm.MaxIntegrity);
     }
 
     /// <summary>
-    /// Checks if the supermatter is delaminating
-    /// and raises an event if it is
+    /// Checks if the supermatters intregrity has hit 0
+    /// and raises an event if it has which trigger the delamination
     /// </summary>
     /// <param name="uid"></param>
     /// <param name="sm"></param>
     private void CheckDelamination(EntityUid uid, SupermatterComponent sm)
     {
-        if (sm.Integrity > 0)
+        if (sm.Integrity > 0 || sm.Delaminated)
             return;
         var dominant = GetDominantCharacteristic(sm);
         var ev = new SupermatterDelaminationEvent(uid, dominant);
         RaiseLocalEvent(uid, ref ev);
         sm.Delaminated = true;
+        //_audio.PlayPvs(sm.SoundDelamming, uid,);
     }
 
     /// <summary>
@@ -492,7 +510,6 @@ public sealed class SupermatterSystem : EntitySystem
     }
 
 
-
     /// <summary>
     /// Makes a supermatter attempt to ash a given entity.
     /// </summary>
@@ -500,8 +517,10 @@ public sealed class SupermatterSystem : EntitySystem
     /// <param name="morsel"></param>
     /// <param name="sm"></param>
     /// <param name="outerContainer"></param>
+    /// <param name="fromTree"></param>
+    /// <param name="isMob"></param>
     /// <returns></returns>
-    private bool AttemptAshEntity(EntityUid hungry, EntityUid morsel, SupermatterComponent sm, BaseContainer? outerContainer = null, bool fromTree = false)
+    private bool AttemptAshEntity(EntityUid hungry, EntityUid morsel, SupermatterComponent sm, BaseContainer? outerContainer = null, bool fromTree = false, bool isMob = false)
     {
         if (!CanAshEntity(hungry, morsel, sm))
             return false;
@@ -515,7 +534,7 @@ public sealed class SupermatterSystem : EntitySystem
         if (Name(morsel) == "ash")
             return false;
 
-        AshEntity(hungry, morsel, sm, outerContainer, fromTree);
+        AshEntity(hungry, morsel, sm, outerContainer, fromTree, isMob);
         return true;
     }
 
@@ -540,7 +559,9 @@ public sealed class SupermatterSystem : EntitySystem
     /// <param name="morsel"></param>
     /// <param name="sm"></param>
     /// <param name="outerContainer"></param>
-    private void AshEntity(EntityUid hungry, EntityUid morsel, SupermatterComponent sm, BaseContainer? outerContainer = null, bool fromTree = false)
+    /// <param name="fromTree"></param>
+    /// <param name="isMob"></param>
+    private void AshEntity(EntityUid hungry, EntityUid morsel, SupermatterComponent sm, BaseContainer? outerContainer = null, bool fromTree = false, bool isMob = false)
     {
         if (EntityManager.IsQueuedForDeletion(morsel)) // already handled, and we're substepping
             return;
@@ -552,10 +573,39 @@ public sealed class SupermatterSystem : EntitySystem
         }
 
         QueueDel(morsel);
-        var evSelf = new EntityAshedBySupermatterEvent(morsel, hungry, sm, outerContainer, fromTree);
-        var evEaten = new SupermatterAshedEntityEvent(morsel, hungry, sm, outerContainer, fromTree );
+        var evSelf = new EntityAshedBySupermatterEvent(morsel, hungry, sm, outerContainer, fromTree, isMob);
+        var evEaten = new SupermatterAshedEntityEvent(morsel, hungry, sm, outerContainer, fromTree, isMob );
         RaiseLocalEvent(hungry, ref evSelf);
         RaiseLocalEvent(morsel, ref evEaten);
+    }
+
+    /// <summary>
+    /// Modified version of the TryPlayEmoteSound from SharedChatSystem.
+    /// Modified to take the SM component and save the audio process on the SM component for later use
+    /// </summary>
+    /// <param name="uid"></param>
+    /// <param name="sm"></param>
+    /// <param name="proto"></param>
+    /// <param name="emoteId"></param>
+    /// <param name="audioParams"></param>
+    /// <returns></returns>
+    public void TryPlayEmoteSound(EntityUid uid, SupermatterComponent sm, EmoteSoundsPrototype? proto, string emoteId, AudioParams? audioParams = null)
+    {
+        if (proto == null)
+            return;
+
+        // try to get specific sound for this emote
+        if (!proto.Sounds.TryGetValue(emoteId, out var sound))
+        {
+            // no specific sound - check fallback
+            sound = proto.FallbackSound;
+            if (sound == null)
+                return;
+        }
+
+        // optional override params > general params for all sounds in set > individual sound params
+        var param = audioParams ?? proto.GeneralParams ?? sound.Params;
+        sm.MobAudioProcess = _audio.PlayPvs(sound, uid, param)?.Entity;
     }
 
     /// <summary>
@@ -570,14 +620,26 @@ public sealed class SupermatterSystem : EntitySystem
     private void OnAshed(EntityUid uid,SupermatterComponent sm, EntityAshedBySupermatterEvent args)
     {
         int count = 1;
-        if (HasComp<MobStateComponent>(args.Entity))
+        if (TryComp<MobStateComponent>(args.Entity, out var mob))
         {
-            var mob = Comp<MobStateComponent>(args.Entity);
+            if (TryComp<VocalComponent>(args.Entity, out var vocal) && vocal.EmoteSounds is {} sounds)
+            {
+                TryPlayEmoteSound(uid, sm, _proto.Index(sounds), vocal.ScreamId);
+                _audio.PlayPvs(sm.SoundAsh, uid);
+                Robust.Shared.Timing.Timer.Spawn(TimeSpan.FromSeconds(sm.ScreamCutOffTimer),
+                    () =>
+                {
+                    if (sm.MobAudioProcess != null)
+                        _audio.Stop(sm.MobAudioProcess);
+                });
+            }
+
             if (mob.CurrentState is not (MobState.Alive or MobState.Critical))
                 return;
 
             if (!TryComp<MobSizeComponent>(args.Entity, out var size))
                 return;
+
             var power = size.SizeProto?.SmPower ?? 0f;
             sm.Power += power;
             sm.Integrity -= power / sm.IntegrityDivisor;
@@ -585,21 +647,31 @@ public sealed class SupermatterSystem : EntitySystem
         else
         {
 
+            if(args is { FromContainerTree: false, IsMob: false })
+                _audio.PlayPvs(sm.SoundAsh, uid);
+
+            else if(!_audio.IsPlaying(sm.AudioProcess) && !args.IsMob)
+                sm.AudioProcess = _audio.PlayPvs(sm.SoundAsh, uid)?.Entity;
 
             if (TryComp<StackComponent>(args.Entity, out var stack))
                 count = stack.Count;
+
             if (!TryComp<PhysicsComponent>(args.Entity, out var phys))
                 return;
+
             if (phys.Mass == 0)
                 return;
+
             sm.PowerPool += phys.Mass * count;
             sm.AbsorptionHealingPool += phys.Mass * count;
         }
 
         if (args.FromContainerTree || HasComp<ContainerManagerComponent>(args.Entity) )
             return;
+
         var coords = Transform(args.Entity).Coordinates;
         var ash = SpawnAtPosition("Ash", coords);
+
         if (count > 1)
         {
             var meta = MetaData(ash);
@@ -780,9 +852,12 @@ public sealed class SupermatterSystem : EntitySystem
     {
         List<EntityUid> immune = new();
         var ashedCount = 0;
+        var baseIsMob = false;
+        if(HasComp<MobStateComponent>(morsel))
+            baseIsMob = true;
         foreach (var entity in allEntities)
         {
-            if (entity == hungry || !AttemptAshEntity(hungry, entity, sm, outerContainer, fromTree: true))
+            if (entity == hungry || !AttemptAshEntity(hungry, entity, sm, outerContainer, fromTree: true,  isMob: baseIsMob))
             {
                 // The first check keeps supermatters an admin smited into a locker from ashing themselves.
                 // The second check keeps things that have been rendered immune to supermatters from being deleted by a supermatter eating their container.
