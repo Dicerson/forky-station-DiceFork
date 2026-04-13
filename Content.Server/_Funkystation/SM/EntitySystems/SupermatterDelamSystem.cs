@@ -1,11 +1,16 @@
-﻿using Content.Server._Funkystation.SM.Components;
+using Content.Server._Funkystation.SM.Components;
 using Content.Server._Funkystation.SM.Events;
-using Content.Shared._Funkystation.SM.Components;
+using Content.Server.Explosion.EntitySystems;
+using Content.Shared._Funkystation.SM;
+using Robust.Shared.Map;
 
 namespace Content.Server._Funkystation.SM.EntitySystems;
 
 public sealed class SupermatterDelamSystem : EntitySystem
 {
+    [Dependency] private readonly ExplosionSystem _explosion = default!;
+    [Dependency] private readonly SharedTransformSystem _transform = default!;
+
     public override void Initialize()
     {
         SubscribeLocalEvent<SupermatterComponent, SupermatterDelaminationEvent>(OnDelam);
@@ -13,43 +18,58 @@ public sealed class SupermatterDelamSystem : EntitySystem
 
     private void OnDelam(EntityUid uid, SupermatterComponent sm, ref SupermatterDelaminationEvent args)
     {
-        switch (args.DominantCharacteristic)
+        var coords = Transform(uid).Coordinates;
+        var mapCoords = _transform.ToMapCoordinates(coords);
+
+        switch (args.DelamType)
         {
-            case GasCharacteristicsType.Growth:
-                TriggerSingularity(uid, sm);
+            case DelamType.Singulo:
+                TriggerSingularity(uid, sm, coords);
                 break;
-
-            case GasCharacteristicsType.Conductivity:
-                TriggerTesla(uid, sm);
+            case DelamType.Tesla:
+                TriggerTesla(uid, sm, coords);
                 break;
-
-            case GasCharacteristicsType.Enthalpy:
-                TriggerExplosion(uid, sm);
+            case DelamType.Explosion:
+                TriggerExplosion(uid, sm, mapCoords);
                 break;
-
-            case GasCharacteristicsType.Stability:
-                TriggerCascade(uid, sm);
+            case DelamType.Cascade:
+                TriggerCascade(uid, sm, mapCoords);
                 break;
         }
+
+        QueueDel(uid);
     }
 
-    private void TriggerSingularity(EntityUid uid, SupermatterComponent sm)
+    private void TriggerSingularity(EntityUid _, SupermatterComponent sm, EntityCoordinates coords)
     {
-
+        Spawn(sm.DelamSingularityPrototype, coords);
     }
 
-    private void TriggerTesla(EntityUid uid, SupermatterComponent sm)
+    private void TriggerTesla(EntityUid _, SupermatterComponent sm, EntityCoordinates coords)
     {
-
+        Spawn(sm.DelamTeslaPrototype, coords);
     }
 
-    private void TriggerExplosion(EntityUid uid, SupermatterComponent sm)
+    private void TriggerExplosion(EntityUid uid, SupermatterComponent sm, MapCoordinates mapCoords)
     {
-
+        _explosion.QueueExplosion(
+            mapCoords,
+            sm.DelamExplosionPrototype,
+            sm.DelamExplosionTotalIntensity,
+            sm.DelamExplosionSlope,
+            sm.DelamExplosionMaxTileIntensity,
+            uid);
     }
 
-    private void TriggerCascade(EntityUid uid, SupermatterComponent sm)
+    private void TriggerCascade(EntityUid uid, SupermatterComponent sm, MapCoordinates mapCoords)
     {
-
+        var mult = sm.DelamCascadeIntensityMultiplier;
+        _explosion.QueueExplosion(
+            mapCoords,
+            sm.DelamExplosionPrototype,
+            sm.DelamExplosionTotalIntensity * mult,
+            sm.DelamExplosionSlope,
+            sm.DelamExplosionMaxTileIntensity * mult,
+            uid);
     }
 }

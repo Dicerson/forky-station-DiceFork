@@ -1,17 +1,28 @@
-﻿using Content.Server._Funkystation.SM.EntitySystems;
+using Content.Server._Funkystation.SM.EntitySystems;
+using Content.Shared._Funkystation.SM;
 using Content.Shared._Funkystation.SM.Components;
 using Content.Shared.Atmos;
+using Content.Shared.Explosion;
 using Robust.Shared.Audio;
 using Robust.Shared.GameStates;
+using Robust.Shared.Prototypes;
 using Robust.Shared.Serialization;
 
 namespace Content.Server._Funkystation.SM.Components;
 
 [RegisterComponent]
-[Access(typeof(SupermatterSystem), typeof(SupermatterLightningSystem))]
+[Access(typeof(SupermatterSystem), typeof(SupermatterLightningSystem), typeof(SupermatterAnomalySystem))]
 public sealed partial class SupermatterComponent : SharedSupermatterComponent
 {
     // --- Core State ---
+    /// <summary>
+    /// TG wiki: the crystal is inert until struck or fed matter. Until activated, internal energy does not accumulate from gas processing and vacuum/charge hazards treat power as zero.
+    /// </summary>
+    [DataField("activated")]
+    public bool Activated;
+    /// <summary>
+    /// Internal energy drive for lightning, tesla delam branch (wiki-style MeV thresholds from server CVars), radiation, and console telemetry. Runtime still uses the gas characteristic pipeline; this field is the authoritative scalar for wiki energy predicates.
+    /// </summary>
     [DataField("power")]
     public float Power;
     [DataField("integrity")]
@@ -20,6 +31,11 @@ public sealed partial class SupermatterComponent : SharedSupermatterComponent
     public float MaxIntegrity = 1000f;
     [DataField("vacuumDamagePerTile")]
     public float VacuumDamagePerTile = 0.5f;
+    /// <summary>
+    /// Integrity vacuum stress only applies when stored power exceeds this (after per-tick stability injection).
+    /// </summary>
+    [DataField("vacuumDamageMinPower")]
+    public float VacuumDamageMinPower = 50f;
     [DataField("absorptionHealing")]
     public float AbsorptionHealing = 1f;
     [DataField("ratioPerTile")]
@@ -32,6 +48,36 @@ public sealed partial class SupermatterComponent : SharedSupermatterComponent
     public List<string> RadiationDamageTypes= [];
     [ViewVariables(VVAccess.ReadOnly)]
     public bool Delaminated = false;
+
+    /// <summary>
+    /// Crystal is counting down to final delamination outcome.
+    /// </summary>
+    [ViewVariables(VVAccess.ReadOnly)]
+    public bool Delamming;
+
+    /// <summary>
+    /// Outcome chosen when <see cref="Delamming"/> began (before timer elapses).
+    /// </summary>
+    [ViewVariables(VVAccess.ReadOnly)]
+    public DelamType PreferredDelamType;
+
+    /// <summary>
+    /// True for the rest of the atmos tick that started delamination so passive healing cannot cancel countdown instantly.
+    /// </summary>
+    public bool DelamBeganThisAtmos;
+
+    /// <summary>
+    /// Seconds remaining until <see cref="SupermatterDelaminationEvent"/> fires.
+    /// </summary>
+    [ViewVariables(VVAccess.ReadOnly)]
+    public float DelamCountdown;
+
+    /// <summary>
+    /// Countdown duration when integrity first hits zero. Test protos may set small values.
+    /// </summary>
+    [DataField("delamTimer")]
+    public float DelamTimerDuration = 30f;
+
     [DataField("roomTemp")]
     public float NeutralEnthalpyTemperature = 293.15f;
 
@@ -146,4 +192,58 @@ public sealed partial class SupermatterComponent : SharedSupermatterComponent
 
     [DataField("screamCutOffTimer")]
     public float ScreamCutOffTimer = 0.5f;
+
+    /// <summary>
+    /// Spawned when delamination resolves as a singularity-style outcome.
+    /// </summary>
+    [DataField]
+    public EntProtoId DelamSingularityPrototype = "Singularity";
+
+    /// <summary>
+    /// Spawned for tesloose delamination.
+    /// </summary>
+    [DataField]
+    public EntProtoId DelamTeslaPrototype = "TeslaEnergyBall";
+
+    [DataField]
+    public ProtoId<ExplosionPrototype> DelamExplosionPrototype = "Default";
+
+    [DataField]
+    public float DelamExplosionTotalIntensity = 200f;
+
+    [DataField]
+    public float DelamExplosionSlope = 5f;
+
+    [DataField]
+    public float DelamExplosionMaxTileIntensity = 20f;
+
+    /// <summary>
+    /// Stronger explosion used for cascade-style delamination.
+    /// </summary>
+    [DataField]
+    public float DelamCascadeIntensityMultiplier = 2f;
+
+    // --- Anomalies (optional SM-driven spawns) ---
+    /// <summary>TG wiki: anomalies become a concern above ~5000 MeV internal energy.</summary>
+    [DataField]
+    public float AnomalyMinPower = 5000f;
+
+    /// <summary>When 0, anomaly spawns are not gated by conductivity (wiki emphasizes energy/integrity).</summary>
+    [DataField]
+    public float AnomalyMinConductivity;
+
+    [DataField]
+    public float AnomalySpawnInterval = 120f;
+
+    [DataField]
+    public EntProtoId AnomalySpawnPrototype = "RandomAnomalySpawner";
+
+    [DataField]
+    public float AnomalySpawnMinRadius = 2f;
+
+    [DataField]
+    public float AnomalySpawnMaxRadius = 8f;
+
+    /// <summary>Count-up to next spawn attempt; starts high so maps do not spawn on first tick.</summary>
+    public float AnomalyCooldown = 120f;
 }

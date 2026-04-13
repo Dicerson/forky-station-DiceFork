@@ -2,6 +2,8 @@
 using Content.Server._Funkystation.SM.Components;
 using Content.Server.Lightning;
 using Content.Server.Lightning.Components;
+using Content.Shared.Power.Components;
+using Content.Shared.Power.EntitySystems;
 using Robust.Shared.Map;
 using Robust.Shared.Random;
 
@@ -13,6 +15,7 @@ public sealed class SupermatterLightningSystem : EntitySystem
     [Dependency] private readonly SharedTransformSystem _xform = default!;
     [Dependency] private readonly LightningSystem _lightning = default!;
     [Dependency] private readonly EntityLookupSystem _lookup = default!;
+    [Dependency] private readonly SharedBatterySystem _battery = default!;
 
     public override void Update(float frameTime)
     {
@@ -124,8 +127,16 @@ public sealed class SupermatterLightningSystem : EntitySystem
 
     private float DrainEnergyFromTarget(EntityUid target, float amount)
     {
-        // Implement battery drain, heat drain, stamina drain, etc.
-        return amount * 0.5f; // Example
+        if (amount <= 0f || !TryComp<BatteryComponent>(target, out var battery))
+            return 0f;
+
+        var ent = (target, battery);
+        var available = _battery.GetCharge(ent);
+        if (available <= 0f)
+            return 0f;
+
+        var take = MathF.Min(amount, available);
+        return _battery.UseCharge(ent, take);
     }
 
 }
