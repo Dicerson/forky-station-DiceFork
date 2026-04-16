@@ -20,6 +20,7 @@ public sealed partial class SupermatterComponent : SharedSupermatterComponent
     /// </summary>
     [DataField("activated")]
     public bool Activated;
+
     /// <summary>
     /// Internal energy drive for lightning, tesla delam branch (wiki-style MeV thresholds from server CVars), radiation, and console telemetry. Runtime still uses the gas characteristic pipeline; this field is the authoritative scalar for wiki energy predicates.
     /// </summary>
@@ -31,6 +32,7 @@ public sealed partial class SupermatterComponent : SharedSupermatterComponent
     public float MaxIntegrity = 1000f;
     [DataField("vacuumDamagePerTile")]
     public float VacuumDamagePerTile = 0.5f;
+
     /// <summary>
     /// Integrity vacuum stress only applies when stored power exceeds this (after per-tick stability injection).
     /// </summary>
@@ -80,6 +82,12 @@ public sealed partial class SupermatterComponent : SharedSupermatterComponent
 
     [DataField("roomTemp")]
     public float NeutralEnthalpyTemperature = 293.15f;
+    [DataField("maxGravRange")]
+    public float MaxGravRange = 6f;
+    [DataField("minGravRange")]
+    public float MinGravRange = 0.5f;
+    [DataField("gravAcceleration")]
+    public float GravAcceleration = 5f;
 
 
 
@@ -184,7 +192,7 @@ public sealed partial class SupermatterComponent : SharedSupermatterComponent
     /// Delamming sound
     /// </summary>
     [DataField]
-    public SoundPathSpecifier SoundDelamming = new("/Audio/_Funkystation/Supermatter/delamming.ogg");
+    public SoundPathSpecifier AmbientSoundDelamming = new("/Audio/_Funkystation/Supermatter/delamming.ogg");
     [ViewVariables]
     public EntityUid? AudioProcess;
     [ViewVariables]

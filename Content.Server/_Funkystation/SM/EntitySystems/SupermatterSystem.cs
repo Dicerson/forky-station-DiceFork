@@ -207,8 +207,8 @@ public sealed class SupermatterSystem : EntitySystem
         }
 
         var grav = EnsureComp<GravityWellComponent>(uid);
-        grav.MaxRange = Math.Clamp(sm.Power / 2000f, 0.5f, 6f);
-        grav.BaseRadialAcceleration = -3f * Math.Clamp(sm.Power / 5000f, 0.15f, 1f);
+        grav.MaxRange = Math.Clamp(sm.Power / 1000f, sm.MinGravRange, sm.MaxGravRange);
+        grav.BaseRadialAcceleration = sm.GravAcceleration;
     }
 
     /// <summary>
@@ -511,7 +511,7 @@ public sealed class SupermatterSystem : EntitySystem
         sm.Delaminated = true;
         sm.Delamming = false;
         sm.DelamCountdown = 0;
-        _audio.PlayPvs(sm.SoundDelamming, uid);
+        _audio.PlayPvs(sm.AmbientSoundDelamming, uid);
     }
 
     /// <summary>
@@ -687,7 +687,7 @@ public sealed class SupermatterSystem : EntitySystem
         var baseRadiation = sm.BaseRadiation + (sm.Power * sm.PowerPercentage);
         var stabilityMultiplier = (10f - sm.Stability) / 10f;
         // Floor so nominal stability still yields measurable output (radiation source + integration tests).
-        stabilityMultiplier = MathF.Max(0.15f, stabilityMultiplier);
+        stabilityMultiplier = MathF.Max(0.05f, stabilityMultiplier);
         sm.CurrentRadiation = baseRadiation * stabilityMultiplier;
     }
 
@@ -760,6 +760,9 @@ public sealed class SupermatterSystem : EntitySystem
                 return false;
         }
 
+        if (HasComp<AshedBySupermatterComponent>(morsel))
+            return false;
+
         if (Name(morsel) == "ash")
             return false;
 
@@ -779,33 +782,6 @@ public sealed class SupermatterSystem : EntitySystem
         var ev = new SupermatterAttemptConsumeEntityEvent(uid, hungry, sm);
         RaiseLocalEvent(uid, ref ev);
         return !ev.Cancelled;
-    }
-
-    /// <summary>
-    /// Makes a supermatter ash a given entity.
-    /// </summary>
-    /// <param name="hungry"></param>
-    /// <param name="morsel"></param>
-    /// <param name="sm"></param>
-    /// <param name="outerContainer"></param>
-    /// <param name="fromTree"></param>
-    /// <param name="isMob"></param>
-    private void AshEntity(EntityUid hungry, EntityUid morsel, SupermatterComponent sm, BaseContainer? outerContainer = null, bool fromTree = false, bool isMob = false)
-    {
-        if (EntityManager.IsQueuedForDeletion(morsel)) // already handled, and we're substepping
-            return;
-
-        if (HasComp<MindContainerComponent>(morsel)
-            || _tagSystem.HasTag(morsel, HighRiskItemTag))
-        {
-            _adminLogger.Add(LogType.EntityDelete, LogImpact.High, $"{ToPrettyString(morsel):player} entered the Supermatter of {ToPrettyString(hungry)} and was deleted");
-        }
-
-        QueueDel(morsel);
-        var evSelf = new EntityAshedBySupermatterEvent(morsel, hungry, sm, outerContainer, fromTree, isMob);
-        var evEaten = new SupermatterAshedEntityEvent(morsel, hungry, sm, outerContainer, fromTree, isMob );
-        RaiseLocalEvent(hungry, ref evSelf);
-        RaiseLocalEvent(morsel, ref evEaten);
     }
 
     /// <summary>
@@ -838,6 +814,59 @@ public sealed class SupermatterSystem : EntitySystem
     }
 
     /// <summary>
+    /// Makes a supermatter ash a given entity.
+    /// </summary>
+    /// <param name="hungry"></param>
+    /// <param name="morsel"></param>
+    /// <param name="sm"></param>
+    /// <param name="outerContainer"></param>
+    /// <param name="fromTree"></param>
+    /// <param name="isMob"></param>
+    private void AshEntity(EntityUid hungry, EntityUid morsel, SupermatterComponent sm, BaseContainer? outerContainer = null, bool fromTree = false, bool isMob = false)
+    {
+        if (EntityManager.IsQueuedForDeletion(morsel)) // already handled, and we're substepping
+            return;
+
+        if (HasComp<MindContainerComponent>(morsel)
+            || _tagSystem.HasTag(morsel, HighRiskItemTag))
+        {
+            _adminLogger.Add(LogType.EntityDelete, LogImpact.High, $"{ToPrettyString(morsel):player} entered the Supermatter of {ToPrettyString(hungry)} and was deleted");
+        }
+
+        if (TryComp<MobStateComponent>(morsel, out var mob))
+        {
+            if (mob.CurrentState is (MobState.Alive or MobState.Critical))
+            {
+                if (TryComp<VocalComponent>(morsel, out var vocal) && vocal.EmoteSounds is { } sounds)
+                {
+                    EnsureComp<AshedBySupermatterComponent>(morsel);
+                    TryPlayEmoteSound(hungry, sm, _proto.Index(sounds), vocal.ScreamId);
+                    Robust.Shared.Timing.Timer.Spawn(TimeSpan.FromSeconds(sm.ScreamCutOffTimer),
+                        () =>
+                        {
+                            if (sm.MobAudioProcess != null)
+                                _audio.Stop(sm.MobAudioProcess);
+                            QueueDel(morsel);
+                            var evSelf = new EntityAshedBySupermatterEvent(morsel, hungry, sm, outerContainer, fromTree, isMob);
+                            var evEaten = new SupermatterAshedEntityEvent(morsel, hungry, sm, outerContainer, fromTree, isMob );
+                            RaiseLocalEvent(hungry, ref evSelf);
+                            RaiseLocalEvent(morsel, ref evEaten);
+                        });
+                    return;
+                }
+            }
+        }
+
+        QueueDel(morsel);
+        var evSelf = new EntityAshedBySupermatterEvent(morsel, hungry, sm, outerContainer, fromTree, isMob);
+        var evEaten = new SupermatterAshedEntityEvent(morsel, hungry, sm, outerContainer, fromTree, isMob );
+        RaiseLocalEvent(hungry, ref evSelf);
+        RaiseLocalEvent(morsel, ref evEaten);
+
+
+    }
+
+    /// <summary>
     /// Adds power to the sm and adjust the integrity or AbsorptionHealingPool
     /// accordingly to whether the entity is alive or not.
     /// Also spawns an ash entity at the location of the ashed entity
@@ -852,18 +881,7 @@ public sealed class SupermatterSystem : EntitySystem
         int count = 1;
         if (TryComp<MobStateComponent>(args.Entity, out var mob))
         {
-            if (TryComp<VocalComponent>(args.Entity, out var vocal) && vocal.EmoteSounds is {} sounds)
-            {
-                TryPlayEmoteSound(uid, sm, _proto.Index(sounds), vocal.ScreamId);
-                _audio.PlayPvs(sm.SoundAsh, uid);
-                Robust.Shared.Timing.Timer.Spawn(TimeSpan.FromSeconds(sm.ScreamCutOffTimer),
-                    () =>
-                {
-                    if (sm.MobAudioProcess != null)
-                        _audio.Stop(sm.MobAudioProcess);
-                });
-            }
-
+            _audio.PlayPvs(sm.SoundAsh, uid);
             if (mob.CurrentState is not (MobState.Alive or MobState.Critical))
                 return;
 
