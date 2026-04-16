@@ -199,7 +199,7 @@ public sealed partial class SupermatterComponent : SharedSupermatterComponent
     public EntityUid? MobAudioProcess;
 
     [DataField("screamCutOffTimer")]
-    public float ScreamCutOffTimer = 0.5f;
+    public float ScreamCutOffTimer = 0.25f;
 
     /// <summary>
     /// Spawned when delamination resolves as a singularity-style outcome.
