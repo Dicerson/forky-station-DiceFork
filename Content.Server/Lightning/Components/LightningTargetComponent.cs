@@ -1,5 +1,3 @@
-// SPDX-FileCopyrightText: 2023-2024 Ed <96445749+TheShuEd@users.noreply.github.com>
-// SPDX-License-Identifier: MIT
 
 using Content.Server._Funkystation.SM.EntitySystems;
 using Content.Server.Tesla.EntitySystems;

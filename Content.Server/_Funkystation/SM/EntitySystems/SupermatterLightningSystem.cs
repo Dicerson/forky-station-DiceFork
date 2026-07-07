@@ -1,7 +1,8 @@
 ﻿using System.Linq;
-using Content.Server._Funkystation.SM.Components;
 using Content.Server.Lightning;
 using Content.Server.Lightning.Components;
+using Content.Shared._Funkystation.SM;
+using Content.Shared._Funkystation.SM.Components;
 using Content.Shared.Power.Components;
 using Content.Shared.Power.EntitySystems;
 using Robust.Shared.Map;
@@ -9,7 +10,7 @@ using Robust.Shared.Random;
 
 namespace Content.Server._Funkystation.SM.EntitySystems;
 
-public sealed class SupermatterLightningSystem : EntitySystem
+public sealed partial class SupermatterLightningSystem : SharedSupermatterLightningSystem
 {
     [Dependency] private readonly IRobustRandom _random = default!;
     [Dependency] private readonly SharedTransformSystem _xform = default!;
@@ -21,7 +22,7 @@ public sealed class SupermatterLightningSystem : EntitySystem
     {
         base.Update(frameTime);
 
-        var query = EntityQueryEnumerator<SupermatterComponent>();
+        var query = EntityQueryEnumerator<SharedSupermatterComponent>();
 
         while (query.MoveNext(out var uid, out var sm))
         {
@@ -40,7 +41,7 @@ public sealed class SupermatterLightningSystem : EntitySystem
         }
     }
 
-    private float ComputeInterval(SupermatterComponent sm)
+    private float ComputeInterval(SharedSupermatterComponent sm)
     {
         var c = MathF.Abs(sm.Conductivity);
 
@@ -51,7 +52,7 @@ public sealed class SupermatterLightningSystem : EntitySystem
         return MathF.Max(interval, 0.5f);
     }
 
-    private void FireLightning(EntityUid uid, SupermatterComponent sm)
+    private void FireLightning(EntityUid uid, SharedSupermatterComponent sm)
     {
 
 
@@ -75,7 +76,7 @@ public sealed class SupermatterLightningSystem : EntitySystem
     }
 
 
-    private float ComputeBoltEnergy(SupermatterComponent sm)
+    private float ComputeBoltEnergy(SharedSupermatterComponent sm)
     {
         // Simple example: sqrt scaling feels good
         return MathF.Sqrt(sm.Power) * MathF.Abs(sm.Conductivity);
@@ -116,7 +117,7 @@ public sealed class SupermatterLightningSystem : EntitySystem
             var drained = DrainEnergyFromTarget(curTarget, boltEnergy);
 
             // Feed it back into the SM
-            var comp = Comp<SupermatterComponent>(sm);
+            var comp = Comp<SharedSupermatterComponent>(sm);
             comp.Power += drained;
 
             shootedCount++;

@@ -1,4 +1,4 @@
-using Content.Server._Funkystation.SM.Components;
+using Content.Shared._Funkystation.SM.Components;
 using Content.Server._Funkystation.SM.Events;
 using Content.Server.Explosion.EntitySystems;
 using Content.Shared._Funkystation.SM;
@@ -13,10 +13,10 @@ public sealed class SupermatterDelamSystem : EntitySystem
 
     public override void Initialize()
     {
-        SubscribeLocalEvent<SupermatterComponent, SupermatterDelaminationEvent>(OnDelam);
+        SubscribeLocalEvent<SharedSupermatterComponent, SupermatterDelaminationEvent>(OnDelam);
     }
 
-    private void OnDelam(EntityUid uid, SupermatterComponent sm, ref SupermatterDelaminationEvent args)
+    private void OnDelam(EntityUid uid, SharedSupermatterComponent sm, ref SupermatterDelaminationEvent args)
     {
         var coords = Transform(uid).Coordinates;
         var mapCoords = _transform.ToMapCoordinates(coords);
@@ -40,17 +40,17 @@ public sealed class SupermatterDelamSystem : EntitySystem
         QueueDel(uid);
     }
 
-    private void TriggerSingularity(EntityUid _, SupermatterComponent sm, EntityCoordinates coords)
+    private void TriggerSingularity(EntityUid _, SharedSupermatterComponent sm, EntityCoordinates coords)
     {
         Spawn(sm.DelamSingularityPrototype, coords);
     }
 
-    private void TriggerTesla(EntityUid _, SupermatterComponent sm, EntityCoordinates coords)
+    private void TriggerTesla(EntityUid _, SharedSupermatterComponent sm, EntityCoordinates coords)
     {
         Spawn(sm.DelamTeslaPrototype, coords);
     }
 
-    private void TriggerExplosion(EntityUid uid, SupermatterComponent sm, MapCoordinates mapCoords)
+    private void TriggerExplosion(EntityUid uid, SharedSupermatterComponent sm, MapCoordinates mapCoords)
     {
         _explosion.QueueExplosion(
             mapCoords,
@@ -61,7 +61,7 @@ public sealed class SupermatterDelamSystem : EntitySystem
             uid);
     }
 
-    private void TriggerCascade(EntityUid uid, SupermatterComponent sm, MapCoordinates mapCoords)
+    private void TriggerCascade(EntityUid uid, SharedSupermatterComponent sm, MapCoordinates mapCoords)
     {
         var mult = sm.DelamCascadeIntensityMultiplier;
         _explosion.QueueExplosion(

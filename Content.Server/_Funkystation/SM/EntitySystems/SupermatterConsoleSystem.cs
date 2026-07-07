@@ -1,9 +1,7 @@
-using Content.Server._Funkystation.SM.Components;
-using Content.Shared._Funkystation.SM;
 using Content.Shared._Funkystation.SM.Components;
+using Content.Shared._Funkystation.SM;
 using Content.Shared.UserInterface;
 using Robust.Server.GameObjects;
-using Robust.Shared.GameObjects;
 
 namespace Content.Server._Funkystation.SM.EntitySystems;
 
@@ -47,7 +45,7 @@ public sealed class SupermatterConsoleSystem : EntitySystem
     }
 
     /// <summary>
-    /// Active crystal: same grid as console, not a shard, not yet delaminated. Tie-break: highest <see cref="SupermatterComponent.Power"/>.
+    /// Active crystal: same grid as console, not a shard, not yet delaminated. Tie-break: highest <see cref="SharedSupermatterComponent.Power"/>.
     /// </summary>
     public EntityUid? FindActiveSupermatterOnGrid(EntityUid consoleUid, TransformComponent consoleXform)
     {
@@ -58,7 +56,7 @@ public sealed class SupermatterConsoleSystem : EntitySystem
         EntityUid? best = null;
         var bestPower = float.NegativeInfinity;
 
-        var q = EntityQueryEnumerator<SupermatterComponent, TransformComponent>();
+        var q = EntityQueryEnumerator<SharedSupermatterComponent, TransformComponent>();
         while (q.MoveNext(out var smUid, out var sm, out var smXform))
         {
             if (smXform.GridUid != grid)
@@ -86,7 +84,7 @@ public sealed class SupermatterConsoleSystem : EntitySystem
             return;
 
         var smUid = FindActiveSupermatterOnGrid(consoleUid, xform);
-        if (smUid is not { } crystal || !TryComp<SupermatterComponent>(crystal, out var sm))
+        if (smUid is not { } crystal || !TryComp<SharedSupermatterComponent>(crystal, out var sm))
         {
             _ui.SetUiState(consoleUid, SupermatterConsoleUiKey.Key,
                 new SupermatterConsoleBoundUserInterfaceState(false, default, 0, 0, 0, 0, false, 0, 0, 0));

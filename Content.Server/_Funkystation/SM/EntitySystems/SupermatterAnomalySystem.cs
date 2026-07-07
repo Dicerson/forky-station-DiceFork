@@ -1,8 +1,9 @@
 ﻿using System.Numerics;
-using Content.Server._Funkystation.SM.Components;
+using Content.Shared._Funkystation.SM.Components;
 using Content.Server.Anomaly.Components;
 using Content.Shared._Funkystation.SM.Components;
 using Content.Server.Atmos.EntitySystems;
+using Content.Shared._Funkystation.SM;
 using Content.Shared.Physics;
 using Robust.Shared.Map;
 using Robust.Shared.Physics;
@@ -15,7 +16,7 @@ namespace Content.Server._Funkystation.SM.EntitySystems;
 /// <summary>
 /// Spawns anomalies near an energized supermatter on an interval.
 /// </summary>
-public sealed class SupermatterAnomalySystem : EntitySystem
+public sealed partial class SupermatterAnomalySystem : SharedSupermatterAnomalySystem
 {
     [Dependency] private readonly IRobustRandom _random = default!;
     [Dependency] private readonly SharedTransformSystem _transform = default!;
@@ -26,7 +27,7 @@ public sealed class SupermatterAnomalySystem : EntitySystem
     {
         base.Update(frameTime);
 
-        var query = EntityQueryEnumerator<SupermatterComponent, TransformComponent>();
+        var query = EntityQueryEnumerator<SharedSupermatterComponent, TransformComponent>();
         while (query.MoveNext(out var uid, out var sm, out var xform))
         {
             if (sm.Delaminated || sm.Delamming || HasComp<SupermatterShardComponent>(uid))
@@ -49,7 +50,7 @@ public sealed class SupermatterAnomalySystem : EntitySystem
         }
     }
 
-    private bool TrySpawnNear(EntityUid smUid, SupermatterComponent sm, EntityUid gridUid, MapGridComponent grid, TransformComponent smXform)
+    private bool TrySpawnNear(EntityUid smUid, SharedSupermatterComponent sm, EntityUid gridUid, MapGridComponent grid, TransformComponent smXform)
     {
         var center = _map.TileIndicesFor(gridUid, grid, smXform.Coordinates);
         var proto = sm.AnomalySpawnPrototype.Id;
