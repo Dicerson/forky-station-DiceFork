@@ -1,9 +1,9 @@
 using Content.Server._Funkystation.SM.Events;
 using Content.Shared._Funkystation.Mobs;
 using Content.Shared._Funkystation.SM.Components;
+using Content.Shared._Funkystation.SM.Visuals;
 using Content.Shared.Administration.Logs;
 using Content.Shared.Chat.Prototypes;
-using Content.Shared.Chemistry.Components.SolutionManager;
 using Content.Shared.Damage.Systems;
 using Content.Shared.Database;
 using Content.Shared.Interaction;
@@ -29,13 +29,15 @@ namespace Content.Shared._Funkystation.SM;
 public abstract partial class SharedSupermatterSystem : EntitySystem
 {
 
-    [Dependency] private readonly ISharedAdminLogManager _adminLogger = default!;
-    [Dependency] private readonly IPrototypeManager _proto = default!;
-    [Dependency] private readonly MetaDataSystem _metaDataSystem = default!;
-    [Dependency] private readonly SharedAudioSystem _audio = default!;
-    [Dependency] private readonly SharedContainerSystem _containerSystem = default!;
-    [Dependency] private readonly SharedTransformSystem _xformSystem = default!;
-    [Dependency] private readonly TagSystem _tagSystem = default!;
+    [Dependency] private ISharedAdminLogManager _adminLogger = default!;
+    [Dependency] private SharedAppearanceSystem _appearance = default!;
+    [Dependency] private IPrototypeManager _proto = default!;
+    [Dependency] private MetaDataSystem _metaDataSystem = default!;
+    [Dependency] private SharedAudioSystem _audio = default!;
+    [Dependency] private SharedContainerSystem _containerSystem = default!;
+    [Dependency] private SharedTransformSystem _xformSystem = default!;
+    [Dependency] private TagSystem _tagSystem = default!;
+
 
 
     private static readonly ProtoId<TagPrototype> HighRiskItemTag = "HighRiskItem";
@@ -53,7 +55,7 @@ public abstract partial class SharedSupermatterSystem : EntitySystem
         SubscribeLocalEvent<SharedSupermatterComponent, EntityAshedBySupermatterEvent>(OnAshed);
         SubscribeLocalEvent<SharedSupermatterComponent, StartCollideEvent>(OnAshAbsorption);
         SubscribeLocalEvent<ContainerManagerComponent, SupermatterAshedEntityEvent>(OnContainerAshed);
-        SubscribeLocalEvent<SharedSupermatterComponent, DamageChangedEvent>(OnDamage);
+        SubscribeLocalEvent<SharedSupermatterComponent, DamageDealtEvent>(OnDamage);
         SubscribeLocalEvent<SharedSupermatterComponent, ThrowHitByEvent>(OnEmbed);
         SubscribeLocalEvent<SharedSupermatterComponent, InteractHandEvent>(OnInteractHand);
         SubscribeLocalEvent<SharedSupermatterComponent, InteractUsingEvent>(OnInteractUsing);
@@ -210,7 +212,9 @@ public abstract partial class SharedSupermatterSystem : EntitySystem
                 if (TryComp<VocalComponent>(morsel, out var vocal) && vocal.EmoteSounds is { } sounds)
                 {
                     EnsureComp<AshedBySupermatterComponent>(morsel);
+                    EnsureComp<SupermatterMobVisualsComponent>(morsel);
                     TryPlayEmoteSound(hungry, sm, _proto.Index(sounds), vocal.ScreamId);
+                    _appearance.SetData(morsel, SupermatterVisuals.Cloaked, true);
                     Robust.Shared.Timing.Timer.Spawn(TimeSpan.FromSeconds(sm.ScreamCutOffTimer),
                         () =>
                         {
@@ -404,8 +408,6 @@ public abstract partial class SharedSupermatterSystem : EntitySystem
 
             foreach (var entity in container.ContainedEntities)
             {
-                if (HasComp<SolutionContainerManagerComponent>(entity))
-                    continue;
                 CollectAllContainers(entity, results);
             }
         }
@@ -432,8 +434,6 @@ public abstract partial class SharedSupermatterSystem : EntitySystem
 
                 foreach (var entity in container.ContainedEntities)
                 {
-                    if (HasComp<SolutionContainerManagerComponent>(entity))
-                        continue;
                     stack.Push(entity);
                 }
             }
@@ -484,9 +484,6 @@ public abstract partial class SharedSupermatterSystem : EntitySystem
             if (TryComp<StackComponent>(entity, out var stack))
             {
                 ashedCount += stack.Count;
-                if (HasComp<SolutionContainerManagerComponent>(entity)) // Ideally this check is not needed but because morsel does not get filtered it's needed
-                    ashedCount -= 1;
-
             }
             else
             {
@@ -581,13 +578,13 @@ public abstract partial class SharedSupermatterSystem : EntitySystem
     /// <param name="uid"></param>
     /// <param name="sm"></param>
     /// <param name="args"></param>
-    private void OnDamage(EntityUid uid, SharedSupermatterComponent sm, ref DamageChangedEvent args)
+    private void OnDamage(EntityUid uid, SharedSupermatterComponent sm, ref DamageDealtEvent args)
     {
-        if (args.DamageDelta is null)
+        if (args.Damage.GetTotal() == 0)
             return;
         var totalDamage = 0f;
 
-        foreach (var (typeId, amount) in args.DamageDelta.DamageDict)
+        foreach (var (typeId, amount) in args.Damage.DamageDict)
         {
             if (amount <= 0)
                 continue;

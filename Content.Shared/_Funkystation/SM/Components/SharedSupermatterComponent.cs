@@ -79,7 +79,6 @@ public sealed partial class SharedSupermatterComponent : Component
     /// </summary>
     [DataField("delamTimer")]
     public float DelamTimerDuration = 30f;
-
     [DataField("roomTemp")]
     public float NeutralEnthalpyTemperature = 293.15f;
     [DataField("maxGravRange")]
