@@ -104,6 +104,7 @@
   - WeaponPistolCHIMP
   - AnomalySynchronizerCircuitboard
   - AnomalyVesselExperimentalCircuitboard
+  - BorgModuleAnomalyAdvanced #Funky
   technologyPrerequisites:
   - BasicAnomalousResearch
 
