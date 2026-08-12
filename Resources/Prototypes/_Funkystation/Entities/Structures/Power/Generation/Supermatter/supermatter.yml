@@ -69,15 +69,9 @@
         layer:
         - MachineLayer
         - HighImpassable
-  - type: Tag
-    tags:
-    - GhostOnlyWarp
   - type: WarpPoint
     follow: true
     location: supermatter
-    blacklist:
-      tags:
-      - GhostOnlyWarp
   - type: Transform
     anchored: true
     noRot: true

@@ -1,12 +1,13 @@
 using Content.Server._Funkystation.SM.Events;
 using Content.Shared._Funkystation.Mobs;
 using Content.Shared._Funkystation.SM.Components;
-using Content.Shared._Funkystation.SM.Visuals;
 using Content.Shared.Administration.Logs;
 using Content.Shared.Chat.Prototypes;
 using Content.Shared.Damage.Systems;
 using Content.Shared.Database;
+using Content.Shared.Humanoid;
 using Content.Shared.Interaction;
+using Content.Shared.Inventory;
 using Content.Shared.Mind.Components;
 using Content.Shared.Mobs;
 using Content.Shared.Mobs.Components;
@@ -23,6 +24,7 @@ using Robust.Shared.Map.Components;
 using Robust.Shared.Physics.Components;
 using Robust.Shared.Physics.Events;
 using Robust.Shared.Prototypes;
+using Robust.Shared.Timing;
 
 namespace Content.Shared._Funkystation.SM;
 
@@ -37,6 +39,7 @@ public abstract partial class SharedSupermatterSystem : EntitySystem
     [Dependency] private SharedContainerSystem _containerSystem = default!;
     [Dependency] private SharedTransformSystem _xformSystem = default!;
     [Dependency] private TagSystem _tagSystem = default!;
+    [Dependency] private InventorySystem _inventory = default!;
 
 
 
@@ -70,6 +73,18 @@ public abstract partial class SharedSupermatterSystem : EntitySystem
 
         if (HasComp<SupermatterImmuneComponent>(args.User))
             return;
+
+        if (_inventory.TryGetSlotEntity(args.User, "outerClothing", out var suitUid))
+        {
+            if (HasComp<SupermatterImmuneComponent>(suitUid))
+                return;
+        }
+
+        if (_inventory.TryGetSlotEntity(args.User, "head", out var helmetUid))
+        {
+            if (HasComp<SupermatterImmuneComponent>(helmetUid))
+                return;
+        }
 
         if (!AttemptAshEntity(uid, args.User, sm))
             return;
@@ -158,18 +173,15 @@ public abstract partial class SharedSupermatterSystem : EntitySystem
 
     /// <summary>
     /// Modified version of the TryPlayEmoteSound from SharedChatSystem.
-    /// Modified to take the SM component and save the audio process on the SM component for later use
+    /// Modified to return the soundSpecifier so it can be played after the mob it was from got deleted
     /// </summary>
-    /// <param name="uid"></param>
-    /// <param name="sm"></param>
     /// <param name="proto"></param>
     /// <param name="emoteId"></param>
-    /// <param name="audioParams"></param>
     /// <returns></returns>
-    public void TryPlayEmoteSound(EntityUid uid, SharedSupermatterComponent sm, EmoteSoundsPrototype? proto, string emoteId, AudioParams? audioParams = null)
+    public SoundSpecifier? TryGetEmoteSound(EmoteSoundsPrototype? proto, string emoteId)
     {
         if (proto == null)
-            return;
+            return null;
 
         // try to get specific sound for this emote
         if (!proto.Sounds.TryGetValue(emoteId, out var sound))
@@ -177,13 +189,47 @@ public abstract partial class SharedSupermatterSystem : EntitySystem
             // no specific sound - check fallback
             sound = proto.FallbackSound;
             if (sound == null)
-                return;
+                return null;
         }
 
+        return sound;
         // optional override params > general params for all sounds in set > individual sound params
-        var param = audioParams ?? proto.GeneralParams ?? sound.Params;
-        sm.MobAudioProcess = _audio.PlayPvs(sound, uid, param)?.Entity;
+        //var param = audioParams ?? proto.GeneralParams ?? sound.Params;
+        //sm.MobAudioProcess = _audio.PlayPvs(sound, uid, param)?.Entity;
     }
+    /// <summary>
+    /// Raises the supermatter ash event on an entity that got ashed and the supermatter,
+    /// so an ash stack can be created.
+    /// </summary>
+    /// <param name="morsel"></param>
+    /// <param name="hungry"></param>
+    /// <param name="sm"></param>
+    /// <param name="outerContainer"></param>
+    /// <param name="fromTree"></param>
+    /// <param name="isMob"></param>
+    private void RaiseSupermatterAshEvents(EntityUid morsel, EntityUid hungry, SharedSupermatterComponent sm, BaseContainer? outerContainer, bool fromTree, bool isMob)
+    {
+        var evSelf = new EntityAshedBySupermatterEvent(morsel, hungry, sm, outerContainer, fromTree, isMob);
+        var evEaten = new SupermatterAshedEntityEvent(morsel, hungry, sm, outerContainer, fromTree, isMob);
+
+        RaiseLocalEvent(hungry, ref evSelf);
+        RaiseLocalEvent(morsel, ref evEaten);
+    }
+    /// <summary>
+    /// deletes an entity and calls the raise supermatter ash event
+    /// </summary>
+    /// <param name="morsel"></param>
+    /// <param name="hungry"></param>
+    /// <param name="sm"></param>
+    /// <param name="outerContainer"></param>
+    /// <param name="fromTree"></param>
+    /// <param name="isMob"></param>
+    private void DeleteAndRaise(EntityUid morsel, EntityUid hungry, SharedSupermatterComponent sm, BaseContainer? outerContainer, bool fromTree, bool isMob)
+    {
+        QueueDel(morsel);
+        RaiseSupermatterAshEvents(morsel, hungry, sm, outerContainer, fromTree, isMob);
+    }
+
 
     /// <summary>
     /// Makes a supermatter ash a given entity.
@@ -205,39 +251,68 @@ public abstract partial class SharedSupermatterSystem : EntitySystem
             _adminLogger.Add(LogType.EntityDelete, LogImpact.High, $"{ToPrettyString(morsel):player} entered the Supermatter of {ToPrettyString(hungry)} and was deleted");
         }
 
-        if (TryComp<MobStateComponent>(morsel, out var mob))
+        // Early return: not a mob
+        if (!TryComp<MobStateComponent>(morsel, out var mob))
         {
-            if (mob.CurrentState is (MobState.Alive or MobState.Critical))
-            {
-                if (TryComp<VocalComponent>(morsel, out var vocal) && vocal.EmoteSounds is { } sounds)
-                {
-                    EnsureComp<AshedBySupermatterComponent>(morsel);
-                    EnsureComp<SupermatterMobVisualsComponent>(morsel);
-                    TryPlayEmoteSound(hungry, sm, _proto.Index(sounds), vocal.ScreamId);
-                    _appearance.SetData(morsel, SupermatterVisuals.Cloaked, true);
-                    Robust.Shared.Timing.Timer.Spawn(TimeSpan.FromSeconds(sm.ScreamCutOffTimer),
-                        () =>
-                        {
-                            if (sm.MobAudioProcess != null)
-                                _audio.Stop(sm.MobAudioProcess);
-                            QueueDel(morsel);
-                            var evSelf = new EntityAshedBySupermatterEvent(morsel, hungry, sm, outerContainer, fromTree, isMob);
-                            var evEaten = new SupermatterAshedEntityEvent(morsel, hungry, sm, outerContainer, fromTree, isMob );
-                            RaiseLocalEvent(hungry, ref evSelf);
-                            RaiseLocalEvent(morsel, ref evEaten);
-                        });
-                    return;
-                }
-            }
+            DeleteAndRaise(morsel, hungry, sm, outerContainer, fromTree, isMob);
+            return;
         }
 
-        QueueDel(morsel);
-        var evSelf = new EntityAshedBySupermatterEvent(morsel, hungry, sm, outerContainer, fromTree, isMob);
-        var evEaten = new SupermatterAshedEntityEvent(morsel, hungry, sm, outerContainer, fromTree, isMob );
-        RaiseLocalEvent(hungry, ref evSelf);
-        RaiseLocalEvent(morsel, ref evEaten);
+        // Early return: not alive or critical
+        if (mob.CurrentState is not (MobState.Alive or MobState.Critical))
+        {
+            DeleteAndRaise(morsel, hungry, sm, outerContainer, fromTree, isMob);
+            return;
+        }
 
+        // Early return: no vocal component
+        if (!TryComp<VocalComponent>(morsel, out var vocal) || vocal.EmoteSounds is not { } sounds)
+        {
+            DeleteAndRaise(morsel, hungry, sm, outerContainer, fromTree, isMob);
+            return;
+        }
 
+        // Early return: no scream sound
+        var mobScream = TryGetEmoteSound(_proto.Index(sounds), vocal.ScreamId);
+        if (mobScream == null)
+        {
+            DeleteAndRaise(morsel, hungry, sm, outerContainer, fromTree, isMob);
+            return;
+        }
+
+        // HUMANOID BRANCH
+        if (TryComp<HumanoidProfileComponent>(morsel, out _))
+        {
+            var coords = Transform(morsel).Coordinates;
+            DeleteAndRaise(morsel, hungry, sm, outerContainer, fromTree, isMob);
+
+            SpawnAtPosition("SupermatterAshingEffect", coords);
+            var param = _proto.Index(sounds).GeneralParams ?? mobScream.Params;
+
+            sm.MobAudioProcess = _audio.PlayPvs(mobScream, hungry, param)?.Entity;
+
+            Timer.Spawn(TimeSpan.FromSeconds(sm.ScreamCutOffTimer),
+                () =>
+                {
+                    if (sm.MobAudioProcess != null)
+                        _audio.Stop(sm.MobAudioProcess);
+                });
+
+            return;
+        }
+
+        // NON-HUMANOID BRANCH
+        var param2 = _proto.Index(sounds).GeneralParams ?? mobScream.Params;
+        sm.MobAudioProcess = _audio.PlayPvs(mobScream, hungry, param2)?.Entity;
+
+        Timer.Spawn(TimeSpan.FromSeconds(sm.ScreamCutOffTimer),
+            () =>
+            {
+                if (sm.MobAudioProcess != null)
+                    _audio.Stop(sm.MobAudioProcess);
+
+                DeleteAndRaise(morsel, hungry, sm, outerContainer, fromTree, isMob);
+            });
     }
 
     /// <summary>
