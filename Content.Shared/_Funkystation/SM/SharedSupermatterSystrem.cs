@@ -284,19 +284,24 @@ public abstract partial class SharedSupermatterSystem : EntitySystem
         if (TryComp<HumanoidProfileComponent>(morsel, out _))
         {
             var coords = Transform(morsel).Coordinates;
-            DeleteAndRaise(morsel, hungry, sm, outerContainer, fromTree, isMob);
-
+           	if (TryComp<SpriteComponent>(morsel, out var sprite))
+        		sprite.Visible = false;
             SpawnAtPosition("SupermatterAshingEffect", coords);
             var param = _proto.Index(sounds).GeneralParams ?? mobScream.Params;
 
             sm.MobAudioProcess = _audio.PlayPvs(mobScream, hungry, param)?.Entity;
-
+            Timer.Spawn(TimeSpan.FromSeconds(0.75),
+                () =>
+                {
+                    DeleteAndRaise(morsel, hungry, sm, outerContainer, fromTree, isMob);
+                });
             Timer.Spawn(TimeSpan.FromSeconds(sm.ScreamCutOffTimer),
                 () =>
                 {
                     if (sm.MobAudioProcess != null)
                         _audio.Stop(sm.MobAudioProcess);
                 });
+
 
             return;
         }
