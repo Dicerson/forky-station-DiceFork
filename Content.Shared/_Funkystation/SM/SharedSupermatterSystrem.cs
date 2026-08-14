@@ -32,7 +32,7 @@ public abstract partial class SharedSupermatterSystem : EntitySystem
 {
 
     [Dependency] private ISharedAdminLogManager _adminLogger = default!;
-    [Dependency] private SharedAppearanceSystem _appearance = default!;
+    //[Dependency] private SharedAppearanceSystem _appearance = default!;
     [Dependency] private IPrototypeManager _proto = default!;
     [Dependency] private MetaDataSystem _metaDataSystem = default!;
     [Dependency] private SharedAudioSystem _audio = default!;
@@ -284,9 +284,24 @@ public abstract partial class SharedSupermatterSystem : EntitySystem
         if (TryComp<HumanoidProfileComponent>(morsel, out _))
         {
             var coords = Transform(morsel).Coordinates;
-           	if (TryComp<SpriteComponent>(morsel, out var sprite))
-        		sprite.Visible = false;
-            SpawnAtPosition("SupermatterAshingEffect", coords);
+            if (!TryComp<HideableHumanoidLayersComponent>(morsel, out var hideComp))
+                DeleteAndRaise(morsel, hungry, sm, outerContainer, fromTree, isMob);
+            if (hideComp != null)
+            {
+                // Hide all relevant layers
+                foreach (HumanoidVisualLayers layer in Enum.GetValues(typeof(HumanoidVisualLayers)))
+                {
+                    // Mark this layer as hidden by "None" or some synthetic SlotFlags
+                    hideComp.HiddenLayers[layer] = SlotFlags.NONE;
+
+                    // Raise the visibility changed event so the client updates visuals
+                    var ev = new HumanoidLayerVisibilityChangedEvent(layer, false);
+                    RaiseLocalEvent(morsel, ref ev);
+                }
+                SpawnAtPosition("SupermatterAshingEffect", coords);
+            }
+
+
             var param = _proto.Index(sounds).GeneralParams ?? mobScream.Params;
 
             sm.MobAudioProcess = _audio.PlayPvs(mobScream, hungry, param)?.Entity;
