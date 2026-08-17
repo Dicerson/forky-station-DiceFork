@@ -99,7 +99,7 @@
     spawned:
     - id: FoodMeatHuman
       amount: 5
-  - type: SupermatterMobVisuals
+
   
 
 - type: entity

@@ -20,6 +20,7 @@ using Content.Shared.Throwing;
 using Robust.Shared.Audio;
 using Robust.Shared.Audio.Systems;
 using Robust.Shared.Containers;
+using Robust.Shared.Map;
 using Robust.Shared.Map.Components;
 using Robust.Shared.Physics.Components;
 using Robust.Shared.Physics.Events;
@@ -49,6 +50,7 @@ public abstract partial class SharedSupermatterSystem : EntitySystem
         base.Initialize();
 
         SubscribeLocalEvent<MapGridComponent, SupermatterAttemptConsumeEntityEvent>(PreventAshing);
+        SubscribeLocalEvent<SupermatterImmuneComponent, SupermatterAttemptConsumeEntityEvent>(PreventAshing);
         SubscribeLocalEvent<StationDataComponent, SupermatterAttemptConsumeEntityEvent>(PreventAshing);
         SubscribeLocalEvent<ProjectileComponent, SupermatterAttemptConsumeEntityEvent>(PreventAshingProjectile);
         SubscribeLocalEvent<SharedSupermatterComponent, EntGotInsertedIntoContainerMessage>(OnSupermatterContained);
@@ -62,7 +64,6 @@ public abstract partial class SharedSupermatterSystem : EntitySystem
         SubscribeLocalEvent<SharedSupermatterComponent, ThrowHitByEvent>(OnEmbed);
         SubscribeLocalEvent<SharedSupermatterComponent, InteractHandEvent>(OnInteractHand);
         SubscribeLocalEvent<SharedSupermatterComponent, InteractUsingEvent>(OnInteractUsing);
-        SubscribeLocalEvent<SupermatterImmuneComponent, SupermatterAttemptConsumeEntityEvent>(OnImmuneCancelAshing);
 
     }
 
@@ -103,10 +104,7 @@ public abstract partial class SharedSupermatterSystem : EntitySystem
         args.Handled = true;
     }
 
-    private void OnImmuneCancelAshing(EntityUid uid, SupermatterImmuneComponent _, ref SupermatterAttemptConsumeEntityEvent args)
-    {
-        args.Cancelled = true;
-    }
+
 
     // This whole section could potentially be reduced by using the
     // Event horizon consumption system as most of the functions are taken from there
@@ -147,13 +145,25 @@ public abstract partial class SharedSupermatterSystem : EntitySystem
                 return false;
         }
 
+        if (_inventory.TryGetSlotEntity(morsel, "outerClothing", out var suitUid))
+        {
+            if (HasComp<SupermatterImmuneComponent>(suitUid))
+                return false;
+        }
+
+        if (_inventory.TryGetSlotEntity(morsel, "head", out var helmetUid))
+        {
+            if (HasComp<SupermatterImmuneComponent>(helmetUid))
+                return false;
+        }
+
         if (HasComp<AshedBySupermatterComponent>(morsel))
             return false;
 
         if (Name(morsel) == "ash")
             return false;
 
-        AshEntity(hungry, morsel, sm, outerContainer, fromTree, isMob);
+        AshEntity(hungry, morsel, sm, outerContainer, fromTree);
         return true;
     }
 
@@ -197,37 +207,48 @@ public abstract partial class SharedSupermatterSystem : EntitySystem
         //var param = audioParams ?? proto.GeneralParams ?? sound.Params;
         //sm.MobAudioProcess = _audio.PlayPvs(sound, uid, param)?.Entity;
     }
-    /// <summary>
-    /// Raises the supermatter ash event on an entity that got ashed and the supermatter,
-    /// so an ash stack can be created.
-    /// </summary>
-    /// <param name="morsel"></param>
-    /// <param name="hungry"></param>
-    /// <param name="sm"></param>
-    /// <param name="outerContainer"></param>
-    /// <param name="fromTree"></param>
-    /// <param name="isMob"></param>
-    private void RaiseSupermatterAshEvents(EntityUid morsel, EntityUid hungry, SharedSupermatterComponent sm, BaseContainer? outerContainer, bool fromTree, bool isMob)
+
+    private enum SupermatterAshScreamKind
     {
-        var evSelf = new EntityAshedBySupermatterEvent(morsel, hungry, sm, outerContainer, fromTree, isMob);
-        var evEaten = new SupermatterAshedEntityEvent(morsel, hungry, sm, outerContainer, fromTree, isMob);
+        None,
+        NonHumanoid,
+        Humanoid
+    }
+
+    private readonly record struct SupermatterAshScreamInfo(
+        SupermatterAshScreamKind Kind,
+        EmoteSoundsPrototype? SoundsProto,
+        SoundSpecifier? ScreamSound,
+        EntityCoordinates Coords);
+
+    private SupermatterAshScreamInfo GetAshScreamInfo(EntityUid morsel)
+    {
+        var coords = Transform(morsel).Coordinates;
+
+        if (!TryComp<MobStateComponent>(morsel, out var mob) ||
+            mob.CurrentState is not (MobState.Alive or MobState.Critical) ||
+            !TryComp<VocalComponent>(morsel, out var vocal) || vocal.EmoteSounds is not { } sounds)
+            return new SupermatterAshScreamInfo(SupermatterAshScreamKind.None, null, null, coords);
+
+        var proto = _proto.Index(sounds);
+        var scream = TryGetEmoteSound(proto, vocal.ScreamId);
+
+        if (scream == null)
+            return new SupermatterAshScreamInfo(SupermatterAshScreamKind.None, null, null, coords);
+
+        return TryComp<HumanoidProfileComponent>(morsel, out _)
+            ? new SupermatterAshScreamInfo(SupermatterAshScreamKind.Humanoid, proto, scream, coords)
+            : new SupermatterAshScreamInfo(SupermatterAshScreamKind.NonHumanoid, proto, scream, coords);
+    }
+
+    private void DeleteAndRaise(EntityUid hungry, EntityUid morsel, SharedSupermatterComponent sm, BaseContainer? outerContainer, bool fromTree)
+    {
+        var evSelf = new EntityAshedBySupermatterEvent(morsel, hungry, sm, outerContainer, fromTree);
+        var evEaten = new SupermatterAshedEntityEvent(morsel, hungry, sm, outerContainer, fromTree);
 
         RaiseLocalEvent(hungry, ref evSelf);
         RaiseLocalEvent(morsel, ref evEaten);
-    }
-    /// <summary>
-    /// deletes an entity and calls the raise supermatter ash event
-    /// </summary>
-    /// <param name="morsel"></param>
-    /// <param name="hungry"></param>
-    /// <param name="sm"></param>
-    /// <param name="outerContainer"></param>
-    /// <param name="fromTree"></param>
-    /// <param name="isMob"></param>
-    private void DeleteAndRaise(EntityUid morsel, EntityUid hungry, SharedSupermatterComponent sm, BaseContainer? outerContainer, bool fromTree, bool isMob)
-    {
         QueueDel(morsel);
-        RaiseSupermatterAshEvents(morsel, hungry, sm, outerContainer, fromTree, isMob);
     }
 
 
@@ -239,8 +260,7 @@ public abstract partial class SharedSupermatterSystem : EntitySystem
     /// <param name="sm"></param>
     /// <param name="outerContainer"></param>
     /// <param name="fromTree"></param>
-    /// <param name="isMob"></param>
-    private void AshEntity(EntityUid hungry, EntityUid morsel, SharedSupermatterComponent sm, BaseContainer? outerContainer = null, bool fromTree = false, bool isMob = false)
+    private void AshEntity(EntityUid hungry, EntityUid morsel, SharedSupermatterComponent sm, BaseContainer? outerContainer = null, bool fromTree = false)
     {
         if (EntityManager.IsQueuedForDeletion(morsel)) // already handled, and we're substepping
             return;
@@ -250,65 +270,62 @@ public abstract partial class SharedSupermatterSystem : EntitySystem
         {
             _adminLogger.Add(LogType.EntityDelete, LogImpact.High, $"{ToPrettyString(morsel):player} entered the Supermatter of {ToPrettyString(hungry)} and was deleted");
         }
+        var info = GetAshScreamInfo(morsel);
+        EnsureComp<AshedBySupermatterComponent>(morsel);
 
-        // Early return: not a mob
-        if (!TryComp<MobStateComponent>(morsel, out var mob))
+        if (info.Kind == SupermatterAshScreamKind.NonHumanoid)
         {
-            DeleteAndRaise(morsel, hungry, sm, outerContainer, fromTree, isMob);
-            return;
-        }
 
-        // Early return: not alive or critical
-        if (mob.CurrentState is not (MobState.Alive or MobState.Critical))
-        {
-            DeleteAndRaise(morsel, hungry, sm, outerContainer, fromTree, isMob);
-            return;
-        }
+            var param = info.SoundsProto!.GeneralParams ?? info.ScreamSound!.Params;
 
-        // Early return: no vocal component
-        if (!TryComp<VocalComponent>(morsel, out var vocal) || vocal.EmoteSounds is not { } sounds)
-        {
-            DeleteAndRaise(morsel, hungry, sm, outerContainer, fromTree, isMob);
-            return;
-        }
+            sm.MobAudioProcess = _audio.PlayStatic(info.ScreamSound!, hungry, info.Coords, param)?.Entity;
 
-        // Early return: no scream sound
-        var mobScream = TryGetEmoteSound(_proto.Index(sounds), vocal.ScreamId);
-        if (mobScream == null)
-        {
-            DeleteAndRaise(morsel, hungry, sm, outerContainer, fromTree, isMob);
-            return;
-        }
-
-        // HUMANOID BRANCH
-        if (TryComp<HumanoidProfileComponent>(morsel, out _))
-        {
-            var coords = Transform(morsel).Coordinates;
-            if (!TryComp<HideableHumanoidLayersComponent>(morsel, out var hideComp))
-                DeleteAndRaise(morsel, hungry, sm, outerContainer, fromTree, isMob);
-            if (hideComp != null)
+            Timer.Spawn(TimeSpan.FromSeconds(sm.ScreamCutOffTimer),
+                () =>
             {
-                // Hide all relevant layers
-                foreach (HumanoidVisualLayers layer in Enum.GetValues(typeof(HumanoidVisualLayers)))
-                {
-                    // Mark this layer as hidden by "None" or some synthetic SlotFlags
-                    hideComp.HiddenLayers[layer] = SlotFlags.NONE;
+                if (sm.MobAudioProcess != null)
+                    _audio.Stop(sm.MobAudioProcess);
 
-                    // Raise the visibility changed event so the client updates visuals
-                    var ev = new HumanoidLayerVisibilityChangedEvent(layer, false);
-                    RaiseLocalEvent(morsel, ref ev);
-                }
-                SpawnAtPosition("SupermatterAshingEffect", coords);
-            }
+                DeleteAndRaise(hungry, morsel, sm, outerContainer, fromTree);
+            });
+            return;
+        }
+
+        DeleteAndRaise(hungry, morsel, sm, outerContainer, fromTree);
+
+    }
 
 
-            var param = _proto.Index(sounds).GeneralParams ?? mobScream.Params;
 
-            sm.MobAudioProcess = _audio.PlayPvs(mobScream, hungry, param)?.Entity;
+    private void AshSpawn(EntityCoordinates coords, int count)
+    {
+
+        var ash = SpawnAtPosition("Ash", coords);
+
+        if (count > 1)
+        {
+            var meta = MetaData(ash);
+            var baseDesc = meta.EntityDescription;
+            var newDesc = $"{baseDesc} It contains the remains of {count} things.";
+            _metaDataSystem.SetEntityDescription(ash, newDesc, meta);
+        }
+    }
+
+    private void AshingEffect(EntityUid morsel, SharedSupermatterComponent sm, int count)
+    {
+
+        var info = GetAshScreamInfo(morsel);
+        // HUMANOID BRANCH
+        if (info.Kind == SupermatterAshScreamKind.Humanoid)
+        {
+            var ashEffect = SpawnAtPosition("SupermatterAshingEffect", info.Coords);
+            var param = info.SoundsProto!.GeneralParams ?? info.ScreamSound!.Params;
+
+            sm.MobAudioProcess = _audio.PlayPvs(info.ScreamSound, ashEffect, param)?.Entity;
             Timer.Spawn(TimeSpan.FromSeconds(0.75),
                 () =>
                 {
-                    DeleteAndRaise(morsel, hungry, sm, outerContainer, fromTree, isMob);
+                    AshSpawn(info.Coords, count);
                 });
             Timer.Spawn(TimeSpan.FromSeconds(sm.ScreamCutOffTimer),
                 () =>
@@ -316,23 +333,9 @@ public abstract partial class SharedSupermatterSystem : EntitySystem
                     if (sm.MobAudioProcess != null)
                         _audio.Stop(sm.MobAudioProcess);
                 });
-
-
             return;
         }
-
-        // NON-HUMANOID BRANCH
-        var param2 = _proto.Index(sounds).GeneralParams ?? mobScream.Params;
-        sm.MobAudioProcess = _audio.PlayPvs(mobScream, hungry, param2)?.Entity;
-
-        Timer.Spawn(TimeSpan.FromSeconds(sm.ScreamCutOffTimer),
-            () =>
-            {
-                if (sm.MobAudioProcess != null)
-                    _audio.Stop(sm.MobAudioProcess);
-
-                DeleteAndRaise(morsel, hungry, sm, outerContainer, fromTree, isMob);
-            });
+        AshSpawn(info.Coords, count);
     }
 
     /// <summary>
@@ -363,10 +366,10 @@ public abstract partial class SharedSupermatterSystem : EntitySystem
         else
         {
 
-            if(args is { FromContainerTree: false, IsMob: false })
+            if(args is { FromContainerTree: false})
                 _audio.PlayPvs(sm.SoundAsh, uid);
 
-            else if(!_audio.IsPlaying(sm.AudioProcess) && !args.IsMob)
+            else if(!_audio.IsPlaying(sm.AudioProcess))
                 sm.AudioProcess = _audio.PlayPvs(sm.SoundAsh, uid)?.Entity;
 
             if (TryComp<StackComponent>(args.Entity, out var stack))
@@ -384,17 +387,8 @@ public abstract partial class SharedSupermatterSystem : EntitySystem
 
         if (args.FromContainerTree || HasComp<ContainerManagerComponent>(args.Entity) )
             return;
+        AshingEffect(args.Entity, sm, count);
 
-        var coords = Transform(args.Entity).Coordinates;
-        var ash = SpawnAtPosition("Ash", coords);
-
-        if (count > 1)
-        {
-            var meta = MetaData(ash);
-            var baseDesc = meta.EntityDescription;
-            var newDesc = $"{baseDesc} It contains the remains of {count} things.";
-            _metaDataSystem.SetEntityDescription(ash, newDesc, meta);
-        }
     }
 
     /// <summary>
@@ -474,11 +468,10 @@ public abstract partial class SharedSupermatterSystem : EntitySystem
         if (_containerSystem.TryGetContainingContainer((morsel, null, null), out var parent))
             return;
 
-        List<BaseContainer> allContainers = new();
+        List<BaseContainer> allContainers = [];
         CollectAllContainers(morsel, allContainers);
 
-        List<EntityUid> allEntities = new();
-        allEntities.Add(morsel);
+        List<EntityUid> allEntities = [morsel];
         CollectAllEntities(allContainers, allEntities);
 
         // Step 3: Ash them
@@ -588,17 +581,7 @@ public abstract partial class SharedSupermatterSystem : EntitySystem
         }
         if (ashedCount  > 0)
         {
-            var coords = Transform(morsel).Coordinates;
-            var ash = SpawnAtPosition("Ash", coords);
-
-            // Set description
-            if (ashedCount > 1)
-            {
-                var meta = MetaData(ash);
-                var baseDesc = meta.EntityDescription; // "This used to be something, but now it's not."
-                var newDesc = $"{baseDesc} It contains the remains of {ashedCount} things.";
-                _metaDataSystem.SetEntityDescription(ash,newDesc, meta);
-            }
+            AshingEffect(morsel, sm, ashedCount);
         }
 
         // Eject immune items if needed
