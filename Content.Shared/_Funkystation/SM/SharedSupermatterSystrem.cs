@@ -43,8 +43,8 @@ public abstract partial class SharedSupermatterSystem : EntitySystem
     [Dependency] private InventorySystem _inventory = default!;
 
 
-
     private static readonly ProtoId<TagPrototype> HighRiskItemTag = "HighRiskItem";
+    private static readonly ISawmill Sawmill = Logger.GetSawmill("supermatter");
     public override void Initialize()
     {
         base.Initialize();
@@ -277,8 +277,13 @@ public abstract partial class SharedSupermatterSystem : EntitySystem
         {
 
             var param = info.SoundsProto!.GeneralParams ?? info.ScreamSound!.Params;
+            Sawmill.Info(
+                $"ScreamSound={info.ScreamSound?.ToString() ?? "null"}, " +
+                $"GeneralParams={info.SoundsProto?.GeneralParams?.ToString() ?? "null"}, " +
+                $"ScreamParams={info.ScreamSound?.Params.ToString() ?? "null"}");
 
             sm.MobAudioProcess = _audio.PlayStatic(info.ScreamSound!, hungry, info.Coords, param)?.Entity;
+
 
             Timer.Spawn(TimeSpan.FromSeconds(sm.ScreamCutOffTimer),
                 () =>
@@ -320,6 +325,10 @@ public abstract partial class SharedSupermatterSystem : EntitySystem
         {
             var ashEffect = SpawnAtPosition("SupermatterAshingEffect", info.Coords);
             var param = info.SoundsProto!.GeneralParams ?? info.ScreamSound!.Params;
+            Sawmill.Info(
+                $"ScreamSound={info.ScreamSound?.ToString() ?? "null"}, " +
+                $"GeneralParams={info.SoundsProto?.GeneralParams?.ToString() ?? "null"}, " +
+                $"ScreamParams={info.ScreamSound?.Params.ToString() ?? "null"}");
 
             sm.MobAudioProcess = _audio.PlayPvs(info.ScreamSound, ashEffect, param)?.Entity;
             Timer.Spawn(TimeSpan.FromSeconds(0.75),
