@@ -276,21 +276,15 @@ public abstract partial class SharedSupermatterSystem : EntitySystem
         if (info.Kind == SupermatterAshScreamKind.NonHumanoid)
         {
 
-            var param = info.SoundsProto!.GeneralParams ?? info.ScreamSound!.Params;
-            Sawmill.Info(
-                $"ScreamSound={info.ScreamSound?.ToString() ?? "null"}, " +
-                $"GeneralParams={info.SoundsProto?.GeneralParams?.ToString() ?? "null"}, " +
-                $"ScreamParams={info.ScreamSound?.Params.ToString() ?? "null"}");
+            var param = (info.SoundsProto!.GeneralParams ?? info.ScreamSound!.Params);
 
-            sm.MobAudioProcess = _audio.PlayStatic(info.ScreamSound!, hungry, info.Coords, param)?.Entity;
-
+            sm.MobAudioProcess = _audio.PlayPvs(info.ScreamSound!, morsel, param)?.Entity;
 
             Timer.Spawn(TimeSpan.FromSeconds(sm.ScreamCutOffTimer),
                 () =>
             {
                 if (sm.MobAudioProcess != null)
                     _audio.Stop(sm.MobAudioProcess);
-
                 DeleteAndRaise(hungry, morsel, sm, outerContainer, fromTree);
             });
             return;
@@ -316,7 +310,7 @@ public abstract partial class SharedSupermatterSystem : EntitySystem
         }
     }
 
-    private void AshingEffect(EntityUid morsel, SharedSupermatterComponent sm, int count)
+    private void AshingEffect(EntityUid hungry, EntityUid morsel, SharedSupermatterComponent sm, int count, bool FromContainerTree)
     {
 
         var info = GetAshScreamInfo(morsel);
@@ -324,13 +318,9 @@ public abstract partial class SharedSupermatterSystem : EntitySystem
         if (info.Kind == SupermatterAshScreamKind.Humanoid)
         {
             var ashEffect = SpawnAtPosition("SupermatterAshingEffect", info.Coords);
-            var param = info.SoundsProto!.GeneralParams ?? info.ScreamSound!.Params;
-            Sawmill.Info(
-                $"ScreamSound={info.ScreamSound?.ToString() ?? "null"}, " +
-                $"GeneralParams={info.SoundsProto?.GeneralParams?.ToString() ?? "null"}, " +
-                $"ScreamParams={info.ScreamSound?.Params.ToString() ?? "null"}");
+            var param = (info.SoundsProto!.GeneralParams ?? info.ScreamSound!.Params);
 
-            sm.MobAudioProcess = _audio.PlayPvs(info.ScreamSound, ashEffect, param)?.Entity;
+            sm.MobAudioProcess = _audio.PlayPvs(info.ScreamSound!, ashEffect, param)?.Entity;
             Timer.Spawn(TimeSpan.FromSeconds(0.75),
                 () =>
                 {
@@ -361,7 +351,7 @@ public abstract partial class SharedSupermatterSystem : EntitySystem
         int count = 1;
         if (TryComp<MobStateComponent>(args.Entity, out var mob))
         {
-            _audio.PlayPvs(sm.SoundAsh, uid);
+            _audio.PlayPvs(sm.SoundAsh, uid, sm.SoundAsh.Params.WithVolume(sm.SoundAshVolume));
             if (mob.CurrentState is not (MobState.Alive or MobState.Critical))
                 return;
 
@@ -376,10 +366,10 @@ public abstract partial class SharedSupermatterSystem : EntitySystem
         {
 
             if(args is { FromContainerTree: false})
-                _audio.PlayPvs(sm.SoundAsh, uid);
+                _audio.PlayPvs(sm.SoundAsh, uid, sm.SoundAsh.Params.WithVolume(sm.SoundAshVolume));
 
             else if(!_audio.IsPlaying(sm.AudioProcess))
-                sm.AudioProcess = _audio.PlayPvs(sm.SoundAsh, uid)?.Entity;
+                sm.AudioProcess = _audio.PlayPvs(sm.SoundAsh, uid, sm.SoundAsh.Params.WithVolume(sm.SoundAshVolume))?.Entity;
 
             if (TryComp<StackComponent>(args.Entity, out var stack))
                 count = stack.Count;
@@ -396,7 +386,7 @@ public abstract partial class SharedSupermatterSystem : EntitySystem
 
         if (args.FromContainerTree || HasComp<ContainerManagerComponent>(args.Entity) )
             return;
-        AshingEffect(args.Entity, sm, count);
+        AshingEffect(uid, args.Entity, sm, count, args.FromContainerTree);
 
     }
 
@@ -477,10 +467,10 @@ public abstract partial class SharedSupermatterSystem : EntitySystem
         if (_containerSystem.TryGetContainingContainer((morsel, null, null), out var parent))
             return;
 
-        List<BaseContainer> allContainers = [];
+        var allContainers = new List<BaseContainer>();
         CollectAllContainers(morsel, allContainers);
 
-        List<EntityUid> allEntities = [morsel];
+        var allEntities = new List<EntityUid> { morsel };
         CollectAllEntities(allContainers, allEntities);
 
         // Step 3: Ash them
@@ -590,7 +580,7 @@ public abstract partial class SharedSupermatterSystem : EntitySystem
         }
         if (ashedCount  > 0)
         {
-            AshingEffect(morsel, sm, ashedCount);
+            AshingEffect(hungry, morsel, sm, ashedCount, false);
         }
 
         // Eject immune items if needed

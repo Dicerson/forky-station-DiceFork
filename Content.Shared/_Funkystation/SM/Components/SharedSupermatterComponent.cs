@@ -188,67 +188,70 @@ public sealed partial class SharedSupermatterComponent : Component
     /// <summary>
     /// Ashing sound
     /// </summary>
-    [DataField]
+    [DataField("soundAsh")]
     public SoundPathSpecifier SoundAsh = new("/Audio/_Funkystation/Supermatter/supermatter.ogg");
+    [DataField("soundAshVolume")]
+    public float SoundAshVolume = -10f;
     [DataField("screamCutOffTimer")]
     public float ScreamCutOffTimer = 0.25f;
     /// <summary>
     /// Delamming sound
     /// </summary>
-    [DataField]
+    [DataField("ambientSoundDelamming")]
     public SoundPathSpecifier AmbientSoundDelamming = new("/Audio/_Funkystation/Supermatter/delamming.ogg");
     /// <summary>
     /// Spawned when delamination resolves as a singularity-style outcome.
     /// </summary>
-    [DataField]
+    [DataField("delamSingularityPrototype")]
     public EntProtoId DelamSingularityPrototype = "Singularity";
 
     /// <summary>
     /// Spawned for tesloose delamination.
     /// </summary>
-    [DataField]
+    [DataField("delamTeslaPrototype")]
     public EntProtoId DelamTeslaPrototype = "TeslaEnergyBall";
 
-    [DataField]
+    [DataField("delamExplosionPrototype")]
     public ProtoId<ExplosionPrototype> DelamExplosionPrototype = "Default";
 
-    [DataField]
+    [DataField("delamExplosionTotalIntensity")]
     public float DelamExplosionTotalIntensity = 200f;
 
-    [DataField]
+    [DataField("delamExplosionSlope")]
     public float DelamExplosionSlope = 5f;
 
-    [DataField]
+    [DataField("delamExplosionMaxTileIntensity")]
     public float DelamExplosionMaxTileIntensity = 20f;
 
     /// <summary>
     /// Stronger explosion used for cascade-style delamination.
     /// </summary>
-    [DataField]
+    [DataField("delamCascadeIntensityMultiplier")]
     public float DelamCascadeIntensityMultiplier = 2f;
 
     // --- Anomalies (optional SM-driven spawns) ---
     /// <summary>TG wiki: anomalies become a concern above ~5000 MeV internal energy.</summary>
-    [DataField]
+    [DataField("anomalyMinPower")]
     public float AnomalyMinPower = 5000f;
 
     /// <summary>When 0, anomaly spawns are not gated by conductivity (wiki emphasizes energy/integrity).</summary>
-    [DataField]
+    [DataField("anomalyMinConductivity")]
     public float AnomalyMinConductivity;
 
-    [DataField]
+    [DataField("anomalySpawnInterval")]
     public float AnomalySpawnInterval = 120f;
 
-    [DataField]
+    [DataField("anomalySpawnPrototype")]
     public EntProtoId AnomalySpawnPrototype = "RandomAnomalySpawner";
 
-    [DataField]
+    [DataField("anomalySpawnMinRadius")]
     public float AnomalySpawnMinRadius = 2f;
 
-    [DataField]
+    [DataField("anomalySpawnMaxRadius")]
     public float AnomalySpawnMaxRadius = 8f;
 
     /// <summary>Count-up to next spawn attempt; starts high so maps do not spawn on first tick.</summary>
+    [DataField("anomalyCooldown")]
     public float AnomalyCooldown = 120f;
 }
 [Serializable, NetSerializable]

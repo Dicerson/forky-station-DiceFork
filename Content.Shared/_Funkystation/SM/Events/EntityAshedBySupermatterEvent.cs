@@ -6,7 +6,7 @@ namespace Content.Server._Funkystation.SM.Events;
 ///     Event raised on the supermatter entity whenever a supermatter ash an entity.
 /// </summary>
 [ByRefEvent]
-public readonly record struct EntityAshedBySupermatterEvent (EntityUid entity, EntityUid supermatterUid, SharedSupermatterComponent supermatter, BaseContainer? container, bool fromTree )
+public readonly record struct EntityAshedBySupermatterEvent (EntityUid entity, EntityUid supermatterUid, SharedSupermatterComponent supermatter, BaseContainer? container, bool fromTree)
 {
     /// <summary>
     /// The entity being ashed by the supermatter.
