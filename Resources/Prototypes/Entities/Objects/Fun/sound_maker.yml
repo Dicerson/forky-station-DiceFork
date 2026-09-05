@@ -1,5 +1,7 @@
-# SPDX-FileCopyrightText: 2026 āda <ss.adasts@gmail.com>
-# SPDX-License-Identifier: MIT
+# When adding new sound makers, also add it to id: AllToySoundMakerTable
+# These entities exist to make a (funny) sound and not much else
+
+## Bike horns
 
 - type: entity
   parent: BaseItem
@@ -208,14 +210,23 @@
   - type: Clothing
     sprite: Objects/Fun/whistles.rsi
     quickEquip: false
-    slots: neck
+    slots:
+      - neck
+      - mask
   - type: UseDelay
     delay: 3
   - type: EmitSoundOnUse
     sound:
       collection: BaseWhistle
+  - type: EmitSoundOnAction
+    sound:
+      collection: BaseWhistle
   - type: Whistle
     distance: 3
+  - type: RMCWhistle
+  - type: Tag
+    tags:
+    - MonkeyWearable
 
 - type: entity
   parent: BaseWhistle

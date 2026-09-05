@@ -1,7 +1,3 @@
-// SPDX-FileCopyrightText: 2023-2024 Ed <96445749+TheShuEd@users.noreply.github.com>
-// SPDX-FileCopyrightText: 2025 slarticodefast <161409025+slarticodefast@users.noreply.github.com>
-// SPDX-License-Identifier: MIT
-
 using Content.Server.Power.EntitySystems;
 using Content.Server.Tesla.Components;
 using Content.Server.Lightning;
@@ -12,9 +8,9 @@ namespace Content.Server.Tesla.EntitySystems;
 /// <summary>
 /// Generates electricity from lightning bolts
 /// </summary>
-public sealed class TeslaCoilSystem : EntitySystem
+public sealed partial class TeslaCoilSystem : EntitySystem
 {
-    [Dependency] private readonly BatterySystem _battery = default!;
+    [Dependency] private BatterySystem _battery = default!;
 
     public override void Initialize()
     {
@@ -28,7 +24,7 @@ public sealed class TeslaCoilSystem : EntitySystem
     {
         if (TryComp<BatteryComponent>(coil, out var batteryComponent))
         {
-            _battery.ChangeCharge((coil, batteryComponent), coil.Comp.ChargeFromLightning);
+            _battery.ChangeCharge((coil, batteryComponent), args.Energy);
         }
     }
 }

@@ -1,9 +1,41 @@
-# SPDX-FileCopyrightText: 2026 pathetic meowmeow <uhhadd@gmail.com>
-# SPDX-License-Identifier: MIT
+- type: markingsGroup
+  parent: Undergarments
+  id: Diona
+  onlyGroupWhitelisted: true
+  limits:
+    enum.HumanoidVisualLayers.Head:
+      limit: 2
+      required: false
+    enum.HumanoidVisualLayers.HeadTop:
+      limit: 1
+      required: false
+    enum.HumanoidVisualLayers.HeadSide:
+      limit: 1
+      required: false
+    enum.HumanoidVisualLayers.Chest:
+      limit: 2
+      required: false
+    enum.HumanoidVisualLayers.LArm:
+      limit: 1
+      required: false
+    enum.HumanoidVisualLayers.RArm:
+      limit: 1
+      required: false
+    enum.HumanoidVisualLayers.LLeg:
+      limit: 1
+      required: false
+    enum.HumanoidVisualLayers.RLeg:
+      limit: 1
+      required: false
+    enum.HumanoidVisualLayers.Overlay:
+      limit: 1
+      required: true
+      default: [ DionaVineOverlay ]
 
 - type: entity
   parent: BaseSpeciesAppearance
   id: AppearanceDiona
+  categories: [ HideSpawnMenu ]
   name: diona appearance
   components:
   - type: Inventory
@@ -14,25 +46,23 @@
           32:
             sprite: Mobs/Species/Human/displacement.rsi
             state: jumpsuit-female
-  - type: EntityTableContainerFill
-    containers:
-      body_organs: !type:AllSelector
-        children:
-        - id: OrganDionaTorso
-        - id: OrganDionaHead
-        - id: OrganDionaArmLeft
-        - id: OrganDionaArmRight
-        - id: OrganDionaHandRight
-        - id: OrganDionaHandLeft
-        - id: OrganDionaLegLeft
-        - id: OrganDionaLegRight
-        - id: OrganDionaFootLeft
-        - id: OrganDionaFootRight
-        - id: OrganDionaBrainNymphing
-        - id: OrganDionaEyes
-        - id: OrganDionaLungsNymphing
-        - id: OrganDionaStomachNymphing
-  - type: HumanoidAppearance
+  - type: InitialBody
+    organs:
+      Torso: OrganDionaTorso
+      Head: OrganDionaHead
+      ArmLeft: OrganDionaArmLeft
+      ArmRight: OrganDionaArmRight
+      HandRight: OrganDionaHandRight
+      HandLeft: OrganDionaHandLeft
+      LegLeft: OrganDionaLegLeft
+      LegRight: OrganDionaLegRight
+      FootLeft: OrganDionaFootLeft
+      FootRight: OrganDionaFootRight
+      Brain: OrganDionaBrainNymphing
+      Eyes: OrganDionaEyes
+      Lungs: OrganDionaLungsNymphing
+      Stomach: OrganDionaStomachNymphing
+  - type: HumanoidProfile
     species: Diona
 
 - type: entity
@@ -40,8 +70,10 @@
   - AppearanceDiona
   - BaseSpeciesMobOrganic
   id: MobDiona
-  name: McUrist Plants
+  name: Urist McPlants
   components:
+  - type: MobSize
+    size: Medium
   - type: Respirator
     damage:
       types:
@@ -49,10 +81,12 @@
     damageRecovery:
       types:
         Asphyxiation: -1.0
-  - type: Hunger
-    baseDecayRate: 0.0083
-  - type: Thirst
-    baseDecayRate: 0.0083
+  - type: Satiation
+    satiations:
+      Hunger:
+        prototype: DionaHunger
+      Thirst:
+        prototype: DionaThirst
   - type: Damageable
     damageModifierSet: Diona
   - type: DamageVisuals
@@ -63,7 +97,6 @@
       Burn:
         sprite: Mobs/Effects/burn_damage.rsi
   - type: Butcherable
-    butcheringType: Spike
     spawned:
       - id: FoodMeatPlant
         amount: 5
@@ -71,7 +104,7 @@
     bloodReferenceSolution:
       reagents:
       - ReagentId: Sap
-        Quantity: 300
+        Quantity: 600
   - type: Reactive
     groups:
       Flammable: [ Touch ]
@@ -124,10 +157,7 @@
     speechVerb: Plant
     allowedEmotes: ['Chirp']
   - type: Vocal
-    sounds:
-      Male: UnisexDiona
-      Female: UnisexDiona
-      Unsexed: UnisexDiona
+    emoteSounds: UnisexDiona
   - type: TypingIndicator
     proto: diona
   - type: BodyEmotes
@@ -143,7 +173,7 @@
   - type: Rootable
 
 - type: entity
-  parent: OrganBase
+  parent: OrganBaseOrganic
   id: OrganDiona
   abstract: true
   suffix: Diona
@@ -164,7 +194,18 @@
     sprite: Mobs/Species/Diona/organs.rsi
 
 - type: entity
-  parent: OrganDiona
+  id: OrganDionaVisual
+  abstract: true
+  components:
+  - type: VisualOrgan
+    data:
+      sprite: Mobs/Species/Diona/parts.rsi
+  - type: VisualOrganMarkings
+    markingData:
+      group: Diona
+
+- type: entity
+  parent: [ OrganDiona, OrganDionaVisual ]
   id: OrganDionaExternal
   abstract: true
   components:
@@ -216,8 +257,13 @@
   id: OrganDionaBrain
 
 - type: entity
-  parent: [ OrganBaseEyes, OrganDionaInternal ]
+  parent: [ OrganDionaVisual, OrganBaseEyes, OrganDionaInternal ]
   id: OrganDionaEyes
+  components:
+  - type: VisualOrgan
+    data:
+      sprite: Mobs/Customization/eyes.rsi
+      state: diona
 
 - type: entity
   parent: [ OrganBaseLungs, OrganDionaInternal, OrganDionaMetabolizer ]
@@ -233,25 +279,28 @@
   components:
   - type: Metabolizer
     maxReagents: 6
-    removeEmpty: true
-    groups:
-    - id: Food
-    - id: Drink
-    - id: Medicine
-    - id: Poison
-    - id: Narcotic
-    - id: Alcohol
+    stages: [ Digestion, Bloodstream, Metabolites ]
 
 - type: entity
-  parent: OrganDionaBrain
+  abstract: true
+  id: BaseNymphingOrgan
+  components:
+  - type: Nymph
+    blacklist:
+      components:
+      - ChangelingTransform
+
+- type: entity
+  parent: [ OrganDionaBrain, BaseNymphingOrgan ]
   suffix: "Diona, Nymphing"
   id: OrganDionaBrainNymphing
   components:
   - type: Nymph
+    transferMind: true
     entityPrototype: OrganDionaNymphBrain
 
 - type: entity
-  parent: OrganDionaLungs
+  parent: [ OrganDionaLungs, BaseNymphingOrgan ]
   suffix: "Diona, Nymphing"
   id: OrganDionaLungsNymphing
   components:
@@ -259,7 +308,7 @@
     entityPrototype: OrganDionaNymphLungs
 
 - type: entity
-  parent: OrganDionaStomach
+  parent: [ OrganDionaStomach, BaseNymphingOrgan ]
   suffix: "Diona, Nymphing"
   id: OrganDionaStomachNymphing
   components:

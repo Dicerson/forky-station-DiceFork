@@ -1,0 +1,95 @@
+## Role Loadouts
+
+- type: roleLoadout
+  id: JobChiefMedicalOfficer
+  groups:
+  - GroupTankHarness
+  - FuCmoHead # funky- previously ChiefMedicalOfficerHead
+  - MedicalMask
+  - FuCmoUniform # funky - ChiefMedicalOfficerJumpsuit
+  - MedicalBackpack
+  - FuCmoOuterclothing # funky - previously ChiefMedicalOfficerOuterClothing
+#  - ChiefMedicalOfficerNeck funky - no more capes for non-militant command
+  - ChiefMedicalOfficerShoes
+  - Pager
+  - Glasses
+  - AssistiveItems
+  - SurvivalMedical
+  - Trinkets
+  - ChiefMedicalOfficerJobTrinkets # Funky uncommented
+  - GroupSpeciesBreathToolMedical
+  - GroupBreathToolDecapoid # MACRO: Decapoid
+
+- type: roleLoadout
+  id: JobMedicalDoctor
+  groups:
+  - GroupTankHarness
+  - FuMedicalDoctorHead # funky - previously MedicalDoctorHead
+  - MedicalMask
+  - FuMedicalDoctorUniform # funky - previously MedicalDoctorJumpsuit
+  - MedicalBackpack
+  - FuMedicalDoctorOuterclothing # funky - previously MedicalDoctorOuterClothing
+  - MedicalShoes
+  - MedicalDoctorPDA
+  - Pager
+  - Glasses
+  - AssistiveItems
+  - SurvivalMedical
+  - Trinkets
+#  - MedicalDoctorJobTrinkets
+  - GroupSpeciesBreathToolMedical
+  - GroupBreathToolDecapoid # MACRO: Decapoid
+
+- type: roleLoadout
+  id: JobMedicalIntern
+  groups:
+  - GroupTankHarness
+  - FuMedicalInternHead # funky - new
+  - FuMedInternUniform # funky - previously MedicalInternJumpsuit
+  - MedicalBackpack
+  - Pager
+  - Glasses
+  - AssistiveItems
+  - SurvivalMedical
+  - Trinkets
+#  - MedicalInternJobTrinkets
+  - GroupSpeciesBreathToolMedical
+  - GroupBreathToolDecapoid # MACRO: Decapoid
+
+- type: roleLoadout
+  id: JobChemist
+  groups:
+  - GroupTankHarness
+  - MedicalMask
+  - FuChemistUniform # funky - previously ChemistJumpsuit
+  - FuChemistGloves # funky - new
+  - ChemistBackpack
+  - FuChemistOuterclothing # funky - previously ChemistOuterClothing
+  - FuChemistBoots # funky - previously MedicalShoes
+  - Pager
+  - Glasses
+  - AssistiveItems
+  - SurvivalMedical
+  - Trinkets
+#  - ChemistJobTrinkets
+  - GroupSpeciesBreathToolMedical
+  - GroupBreathToolDecapoid # MACRO: Decapoid
+
+- type: roleLoadout
+  id: JobParamedic
+  groups:
+  - GroupTankHarness
+  - ParamedicHead
+  - MedicalMask
+  - ParamedicJumpsuit
+  - MedicalBackpack
+  - ParamedicOuterClothing
+  - ParamedicShoes
+  - Pager
+  - Glasses
+  - AssistiveItems
+  - SurvivalMedical
+  - Trinkets
+#  - ParamedicJobTrinkets
+  - GroupSpeciesBreathToolMedical
+  - GroupBreathToolDecapoid # MACRO: Decapoid

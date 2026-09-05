@@ -1,7 +1,5 @@
-// SPDX-FileCopyrightText: 2022 Alex Evgrashin <aevgrashin@yandex.ru>
-// SPDX-FileCopyrightText: 2023 Nemanja <98561806+EmoGarbage404@users.noreply.github.com>
-// SPDX-FileCopyrightText: 2023 DrSmugleaf <DrSmugleaf@users.noreply.github.com>
-// SPDX-License-Identifier: MIT
+using Content.Shared._Funkystation.SM;
+using Content.Shared.Radiation.Systems;
 
 namespace Content.Shared.Radiation.Components;
 
@@ -9,6 +7,7 @@ namespace Content.Shared.Radiation.Components;
 ///     Irradiate all objects in range.
 /// </summary>
 [RegisterComponent]
+[Access(typeof(SharedRadiationSystem), typeof(SharedSupermatterSystem))]
 public sealed partial class RadiationSourceComponent : Component
 {
     /// <summary>

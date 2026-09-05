@@ -1,6 +1,3 @@
-// SPDX-FileCopyrightText: 2023-2024 Ed <96445749+TheShuEd@users.noreply.github.com>
-// SPDX-License-Identifier: MIT
-
 using Content.Server.Tesla.EntitySystems;
 
 namespace Content.Server.Tesla.Components;
@@ -15,6 +12,7 @@ public sealed partial class TeslaCoilComponent : Component
     /// How much power will the coil generate from a lightning strike
     /// </summary>
     // To Do: Different lightning bolts have different powers and generate different amounts of energy
+    // Kinda useless now as each lightning bolt has its own energy amount
     [DataField, ViewVariables(VVAccess.ReadWrite)]
     public float ChargeFromLightning = 50000f;
 }

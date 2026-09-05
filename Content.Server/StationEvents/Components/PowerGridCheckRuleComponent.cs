@@ -1,12 +1,6 @@
-// SPDX-FileCopyrightText: 2023 chromiumboy <50505512+chromiumboy@users.noreply.github.com>
-// SPDX-FileCopyrightText: 2023 DrSmugleaf <DrSmugleaf@users.noreply.github.com>
-// SPDX-FileCopyrightText: 2023 Nemanja <98561806+EmoGarbage404@users.noreply.github.com>
-// SPDX-FileCopyrightText: 2023 metalgearsloth <31366439+metalgearsloth@users.noreply.github.com>
-// SPDX-FileCopyrightText: 2025 Winkarst <74284083+Winkarst-cpu@users.noreply.github.com>
-// SPDX-License-Identifier: MIT
-
 using System.Threading;
 using Content.Server.StationEvents.Events;
+using Content.Shared._MACRO.Announcements;
 using Robust.Shared.Audio;
 using Robust.Shared.Prototypes;
 
@@ -15,26 +9,65 @@ namespace Content.Server.StationEvents.Components;
 [RegisterComponent, Access(typeof(PowerGridCheckRule))]
 public sealed partial class PowerGridCheckRuleComponent : Component
 {
-    /// <summary>
-    /// Default sound of the announcement when power is back on.
-    /// </summary>
-    private static readonly ProtoId<SoundCollectionPrototype> DefaultPowerOn = new("PowerOn");
 
     /// <summary>
-    /// Sound of the announcement to play when power is back on.
+    /// Sound to play when power is restored.
     /// </summary>
     [DataField]
-    public SoundSpecifier PowerOnSound = new SoundCollectionSpecifier(DefaultPowerOn, AudioParams.Default.WithVolume(-4f));
+    public ProtoId<AnnouncementSoundPrototype> PowerOnSound = "GridPowerOn"; // Macrocosm edit - Announcement Sound Prototypes
 
+    /// <summary>
+    /// Token source for cancelling the power restoration announcement.
+    /// </summary>
     public CancellationTokenSource? AnnounceCancelToken;
 
+    /// <summary>
+    /// Station affected by the power grid event.
+    /// </summary>
+    [DataField]
     public EntityUid AffectedStation;
-    public readonly List<EntityUid> Powered = new();
-    public readonly List<EntityUid> Unpowered = new();
 
+    /// <summary>
+    /// List of APC entities that will be sequentially turned off during the event.
+    /// </summary>
+    [DataField]
+    public List<EntityUid> Powered = new();
+
+    /// <summary>
+    /// List of APC entities that have been turned off.
+    /// </summary>
+    [DataField]
+    public List<EntityUid> Unpowered = new();
+
+    /// <summary>
+    /// Time delay in seconds before starting to turn off APCs.
+    /// </summary>
+    [DataField]
     public float SecondsUntilOff = 30.0f;
 
+    /// <summary>
+    /// Number of APC toggles to process per second during the shutdown phase.
+    /// Dynamically calculated based on total APC count and <see cref="SecondsUntilOff"/>.
+    /// </summary>
     public int NumberPerSecond = 0;
+
+    /// <summary>
+    /// Computed time interval between APC toggles.
+    /// </summary>
     public float UpdateRate => 1.0f / NumberPerSecond;
+
+    /// <summary>
+    /// Accumulated frame time to track when to process the next APC toggle.
+    /// </summary>
+    [DataField]
     public float FrameTimeAccumulator = 0.0f;
+}
+
+/// <summary>
+/// This component is used to detect when APCs are constructed
+/// while the PowerGridCheckRule is active.
+/// </summary>
+[RegisterComponent]
+public sealed partial class PowerGridCheckNotifyComponent : Component
+{
 }

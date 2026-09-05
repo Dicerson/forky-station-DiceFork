@@ -1,12 +1,8 @@
-// SPDX-FileCopyrightText: 2023-2024 Nemanja <98561806+EmoGarbage404@users.noreply.github.com>
-// SPDX-FileCopyrightText: 2023 TemporalOroboros <TemporalOroboros@gmail.com>
-// SPDX-FileCopyrightText: 2023 Emisse <99158783+Emisse@users.noreply.github.com>
-// SPDX-License-Identifier: MIT
-
 using Content.Shared.Chemistry.Components;
 using Content.Shared.Chemistry.Reaction;
 using Content.Shared.Interaction;
 using Content.Shared.Popups;
+using Content.Shared.Power.EntitySystems;
 using Robust.Shared.Audio.Systems;
 using Robust.Shared.Containers;
 using Robust.Shared.Network;
@@ -17,15 +13,16 @@ namespace Content.Shared.Chemistry.EntitySystems;
 /// <summary>
 /// This handles <see cref="SolutionContainerMixerComponent"/>
 /// </summary>
-public abstract class SharedSolutionContainerMixerSystem : EntitySystem
+public abstract partial class SharedSolutionContainerMixerSystem : EntitySystem
 {
-    [Dependency] private readonly IGameTiming _timing = default!;
-    [Dependency] private readonly INetManager _net = default!;
-    [Dependency] private readonly SharedAppearanceSystem _appearance = default!;
-    [Dependency] private readonly SharedAudioSystem _audio = default!;
-    [Dependency] private readonly SharedContainerSystem _container = default!;
-    [Dependency] private readonly SharedPopupSystem _popup = default!;
-    [Dependency] private readonly SharedSolutionContainerSystem _solution = default!;
+    [Dependency] private IGameTiming _timing = default!;
+    [Dependency] private INetManager _net = default!;
+    [Dependency] private SharedAppearanceSystem _appearance = default!;
+    [Dependency] private SharedAudioSystem _audio = default!;
+    [Dependency] private SharedContainerSystem _container = default!;
+    [Dependency] private SharedPopupSystem _popup = default!;
+    [Dependency] private SharedSolutionContainerSystem _solution = default!;
+    [Dependency] private SharedPowerStateSystem _powerState = default!;
 
     /// <inheritdoc/>
     public override void Initialize()
@@ -63,14 +60,14 @@ public abstract class SharedSolutionContainerMixerSystem : EntitySystem
         if (!HasPower(entity))
         {
             if (user != null)
-                _popup.PopupClient(Loc.GetString("solution-container-mixer-no-power"), entity, user.Value);
+                _popup.PopupEntity(Loc.GetString("solution-container-mixer-no-power"), entity, user.Value);
             return;
         }
 
         if (!_container.TryGetContainer(uid, comp.ContainerId, out var container) || container.Count == 0)
         {
             if (user != null)
-                _popup.PopupClient(Loc.GetString("solution-container-mixer-popup-nothing-to-mix"), entity, user.Value);
+                _popup.PopupEntity(Loc.GetString("solution-container-mixer-popup-nothing-to-mix"), entity, user.Value);
             return;
         }
 
@@ -79,6 +76,7 @@ public abstract class SharedSolutionContainerMixerSystem : EntitySystem
             comp.MixingSoundEntity = _audio.PlayPvs(comp.MixingSound, entity, comp.MixingSound?.Params.WithLoop(true));
         comp.MixTimeEnd = _timing.CurTime + comp.MixDuration;
         _appearance.SetData(entity, SolutionContainerMixerVisuals.Mixing, true);
+        _powerState.SetWorkingState(entity.Owner, true);
         Dirty(uid, comp);
     }
 
@@ -91,6 +89,7 @@ public abstract class SharedSolutionContainerMixerSystem : EntitySystem
         _appearance.SetData(entity, SolutionContainerMixerVisuals.Mixing, false);
         comp.Mixing = false;
         comp.MixingSoundEntity = null;
+        _powerState.SetWorkingState(entity.Owner, false);
         Dirty(uid, comp);
     }
 
