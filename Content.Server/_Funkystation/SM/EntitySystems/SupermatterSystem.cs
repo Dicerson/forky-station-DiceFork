@@ -240,7 +240,7 @@ public sealed partial class SupermatterSystem : SharedSupermatterSystem
     /// <param name="sm"></param>
     private void ComputeGasCharacteristics(SharedSupermatterComponent sm)
     {
-        float stability = sm.BaseStability + ((sm.Integrity - 1000f)/100f);
+        float stability = sm.BaseStability + ((sm.Integrity - sm.MaxIntegrity)/sm.IntegrityStabilityScalar);
         float growth = sm.BaseGrowth;
         float conductivity = sm.BaseConductivity;
         float enthalpy = sm.BaseEnthalpy;
@@ -253,10 +253,10 @@ public sealed partial class SupermatterSystem : SharedSupermatterSystem
             if (!sm.GasTable.TryGetValue(gas, out var ch))
                 continue;
 
-            stability    += (moles * ch.Stability) / 100f;
-            growth       += (moles * ch.Growth) / 100f;
-            conductivity += (moles * ch.Conductivity) / 100f;
-            enthalpy     += (moles * ch.Enthalpy) / 100f;
+            stability    += (moles * ch.Stability) / sm.GasCharacteristicScalar;
+            growth       += (moles * ch.Growth) / sm.GasCharacteristicScalar;
+            conductivity += (moles * ch.Conductivity) / sm.GasCharacteristicScalar;
+            enthalpy     += (moles * ch.Enthalpy) / sm.GasCharacteristicScalar;
         }
 
         // Per-tick totals from absorbed gas (base + table contribution), not cumulative across ticks.
