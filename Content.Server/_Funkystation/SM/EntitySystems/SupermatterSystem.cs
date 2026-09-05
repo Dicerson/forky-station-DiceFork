@@ -240,7 +240,7 @@ public sealed partial class SupermatterSystem : SharedSupermatterSystem
     /// <param name="sm"></param>
     private void ComputeGasCharacteristics(SharedSupermatterComponent sm)
     {
-        float stability = sm.Integrity / 100f;
+        float stability = sm.BaseStability + ((sm.Integrity - 1000f)/100f);
         float growth = sm.BaseGrowth;
         float conductivity = sm.BaseConductivity;
         float enthalpy = sm.BaseEnthalpy;
