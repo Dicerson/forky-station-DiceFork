@@ -29,6 +29,8 @@ public sealed partial class SharedSupermatterComponent : Component
     public float Power;
     [DataField("integrity")]
     public float Integrity = 1000f;
+    [DataField("integrityStabilityScalar")]
+    public float IntegrityStabilityScalar = 100f;
     [DataField("RadiationDamageTypes")]
     public List<string> RadiationDamageTypes= [];
     [DataField("maxIntegrity")]
@@ -89,6 +91,8 @@ public sealed partial class SharedSupermatterComponent : Component
     public float GravAcceleration = 5f;
 
     // --- Process values ---
+    [DataField("gasCharacteristicScalar")]
+    public float GasCharacteristicScalar = 100f;
     [DataField("absorptionHealingCost")]
     public float AbsorptionHealingCost = 10f;
     [DataField("baseGrowth")]
