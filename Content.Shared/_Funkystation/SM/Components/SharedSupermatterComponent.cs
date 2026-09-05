@@ -98,7 +98,7 @@ public sealed partial class SharedSupermatterComponent : Component
     [DataField("baseGrowth")]
     public float BaseGrowth;
     [DataField("baseStability")]
-    public float BaseStability = 10f;
+    public float BaseStability;
     [DataField("integrityDivisor")]
     public float IntegrityDivisor = 10f;
     [DataField("radiationDamageMultiplier")]
