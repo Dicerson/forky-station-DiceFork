@@ -240,7 +240,7 @@ public sealed partial class SupermatterSystem : SharedSupermatterSystem
     /// <param name="sm"></param>
     private void ComputeGasCharacteristics(SharedSupermatterComponent sm)
     {
-        float stability = sm.Integrity / 1000f;
+        float stability = sm.Integrity / 100f;
         float growth = sm.BaseGrowth;
         float conductivity = sm.BaseConductivity;
         float enthalpy = sm.BaseEnthalpy;
@@ -412,8 +412,8 @@ public sealed partial class SupermatterSystem : SharedSupermatterSystem
                 delta -= sm.CountVacuumTiles * sm.VacuumDamagePerTile;
 
             var gasTemp = sm.AbsorbedGas.Temperature;
-            const float roomTemp = 293.15f;
-            var tempDelta = ((gasTemp - roomTemp) / sm.TemperatureDamageScale) * sm.Enthalpy;
+            float neutralTemp = Atmospherics.T20C + ((sm.Stability - sm.NeutralStability) * sm.Enthalpy);
+            var tempDelta = ((gasTemp - neutralTemp) / sm.TemperatureDamageScale) * sm.Enthalpy;
             delta += tempDelta;
         }
 
