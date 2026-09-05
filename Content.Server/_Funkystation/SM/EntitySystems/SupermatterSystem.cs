@@ -45,7 +45,7 @@ public sealed partial class SupermatterSystem : SharedSupermatterSystem
     {
         if (sm.Delaminated)
             return;
-        sm.Stability = sm.BaseStability;
+        LoadGasCharacteristics();
         ComputeRadiation(sm);
         EmitRadiation(uid, sm);
     }
@@ -240,7 +240,7 @@ public sealed partial class SupermatterSystem : SharedSupermatterSystem
     /// <param name="sm"></param>
     private void ComputeGasCharacteristics(SharedSupermatterComponent sm)
     {
-        float stability = sm.Integrity / 1000f;
+        float stability = sm.BaseStability + sm.Integrity / 100f;
         float growth = sm.BaseGrowth;
         float conductivity = sm.BaseConductivity;
         float enthalpy = sm.BaseEnthalpy;
@@ -260,7 +260,7 @@ public sealed partial class SupermatterSystem : SharedSupermatterSystem
         }
 
         // Per-tick totals from absorbed gas (base + table contribution), not cumulative across ticks.
-        sm.Stability = Math.Min(stability, sm.NeutralStability);
+        sm.Stability = MathF.Min(stability, sm.NeutralStability);
         sm.Growth = growth;
         sm.Conductivity = conductivity;
         sm.Enthalpy = enthalpy;
@@ -323,12 +323,13 @@ public sealed partial class SupermatterSystem : SharedSupermatterSystem
                 if (count < 1)
                     count = 1;
 
+                var stabilityScale = sm.Stability / sm.NeutralStability;
                 var characteristics = new List<(float value, Gas gas)>
                 {
                     (sm.Growth,        Gas.Ammonia),
                     (sm.Enthalpy >= 0 ? sm.Enthalpy : -sm.Enthalpy, sm.Enthalpy >= 0 ? Gas.Plasma     : Gas.Frezon),
                     (sm.Conductivity >= 0 ? sm.Conductivity : -sm.Conductivity, sm.Conductivity >= 0 ? Gas.WaterVapor : Gas.Oxygen),
-                    (sm.Stability >= 0 ? sm.Stability : -sm.Stability, sm.Stability >= 0 ? Gas.Nitrogen   : Gas.Tritium),
+                    (stabilityScale >= 0 ? stabilityScale : -stabilityScale, stabilityScale >= 0 ? Gas.Nitrogen   : Gas.Tritium),
                 };
                 characteristics.Sort((a, b) => MathF.Abs(b.value).CompareTo(MathF.Abs(a.value)));
                 for (var i = 0; i < count && i < characteristics.Count; i++)
@@ -412,8 +413,9 @@ public sealed partial class SupermatterSystem : SharedSupermatterSystem
                 delta -= sm.CountVacuumTiles * sm.VacuumDamagePerTile;
 
             var gasTemp = sm.AbsorbedGas.Temperature;
-            const float roomTemp = 293.15f;
-            var tempDelta = ((gasTemp - roomTemp) / sm.TemperatureDamageScale) * sm.Enthalpy;
+            float neutralTemp = Atmospherics.T20C;
+            neutralTemp += (sm.Stability - sm.NeutralStability) * sm.Enthalpy;
+            var tempDelta = ((gasTemp - neutralTemp) / sm.TemperatureDamageScale) * sm.Enthalpy;
             delta += tempDelta;
         }
 
@@ -555,7 +557,7 @@ public sealed partial class SupermatterSystem : SharedSupermatterSystem
             dominant = GasCharacteristicsType.Enthalpy;
         }
 
-        var stability = MathF.Abs(sm.Stability);
+        var stability = MathF.Abs(sm.Stability / sm.NeutralStability);
         if (stability > max)
         {
             dominant = GasCharacteristicsType.Stability;
