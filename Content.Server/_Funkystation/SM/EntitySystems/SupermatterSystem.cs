@@ -25,7 +25,7 @@ public sealed partial class SupermatterSystem : SharedSupermatterSystem
     [Dependency] private readonly IConfigurationManager _cfg = default!;
 
 
-
+    private static readonly ISawmill Sawmill = Logger.GetSawmill("supermatterServer");
     public override void Initialize()
     {
         base.Initialize();
@@ -45,7 +45,7 @@ public sealed partial class SupermatterSystem : SharedSupermatterSystem
     {
         if (sm.Delaminated)
             return;
-
+        sm.Stability = sm.BaseStability;
         ComputeRadiation(sm);
         EmitRadiation(uid, sm);
     }
@@ -145,7 +145,7 @@ public sealed partial class SupermatterSystem : SharedSupermatterSystem
         ComputeRadiation(sm);
         EmitRadiation(uid, sm);
 
-        UpdateWikiItemPull(uid, sm);
+        UpdateItemPull(uid, sm);
 
         ReleaseGas(uid, sm, args);
 
@@ -155,7 +155,7 @@ public sealed partial class SupermatterSystem : SharedSupermatterSystem
     /// <summary>
     /// TG wiki: powered crystal pulls loose items — implemented via a weak <see cref="GravityWellComponent"/>.
     /// </summary>
-    private void UpdateWikiItemPull(EntityUid uid, SharedSupermatterComponent sm)
+    private void UpdateItemPull(EntityUid uid, SharedSupermatterComponent sm)
     {
         if (sm.Delaminated || sm.Power < 1f)
         {
@@ -188,7 +188,6 @@ public sealed partial class SupermatterSystem : SharedSupermatterSystem
     private void AbsorbGas(EntityUid smUid, SharedSupermatterComponent sm, AtmosDeviceUpdateEvent args)
     {
         sm.CountVacuumTiles = 0;
-        var ratio = sm.RatioPerTile;
         if (args.Grid is not {} grid)
             return;
         var centerTile = _transformSystem.GetGridTilePositionOrDefault(smUid);
@@ -212,7 +211,7 @@ public sealed partial class SupermatterSystem : SharedSupermatterSystem
             if(pressure <= 0)
                 continue;
 
-            var absorbed = mixture.RemoveRatio(ratio);
+            var absorbed = mixture.RemoveRatio(sm.RatioPerTile);
             foreach (var (gas, moles) in absorbed)
             {
                 sm.AbsorbedGas.AdjustMoles(gas, moles);
@@ -241,7 +240,7 @@ public sealed partial class SupermatterSystem : SharedSupermatterSystem
     /// <param name="sm"></param>
     private void ComputeGasCharacteristics(SharedSupermatterComponent sm)
     {
-        float stability = sm.BaseStability;
+        float stability = sm.Integrity / 1000f;
         float growth = sm.BaseGrowth;
         float conductivity = sm.BaseConductivity;
         float enthalpy = sm.BaseEnthalpy;
@@ -254,17 +253,17 @@ public sealed partial class SupermatterSystem : SharedSupermatterSystem
             if (!sm.GasTable.TryGetValue(gas, out var ch))
                 continue;
 
-            stability    += moles * ch.Stability;
-            growth       += moles * ch.Growth;
-            conductivity += moles * ch.Conductivity;
-            enthalpy     += moles * ch.Enthalpy;
+            stability    += (moles * ch.Stability) / 100f;
+            growth       += (moles * ch.Growth) / 100f;
+            conductivity += (moles * ch.Conductivity) / 100f;
+            enthalpy     += (moles * ch.Enthalpy) / 100f;
         }
 
         // Per-tick totals from absorbed gas (base + table contribution), not cumulative across ticks.
-        sm.Stability = Math.Min(stability / 100f, sm.NeutralStability);
-        sm.Growth = growth / 100f;
-        sm.Conductivity = conductivity / 100f;
-        sm.Enthalpy = enthalpy / 100f;
+        sm.Stability = Math.Min(stability, sm.NeutralStability);
+        sm.Growth = growth;
+        sm.Conductivity = conductivity;
+        sm.Enthalpy = enthalpy;
     }
 
     /// <summary>
@@ -290,11 +289,9 @@ public sealed partial class SupermatterSystem : SharedSupermatterSystem
         sm.Growth       *= stabilityEffectScale;
         sm.Conductivity *= stabilityEffectScale;
         sm.Enthalpy     *= stabilityEffectScale;
-
-        sm.Power *= 1f - sm.StabilityPowerDrainScale * sm.Stability;
-        sm.Power += sm.Stability;
+        sm.Power += sm.Power * -sm.StabilityPowerDrainScale * sm.Stability - sm.Stability;
         if (sm.Power <= 0f)
-            sm.Power = 0;
+            sm.Power = 0f;
     }
 
     /// <summary>
@@ -306,7 +303,7 @@ public sealed partial class SupermatterSystem : SharedSupermatterSystem
         var deltaEnergy = sm.Enthalpy * 1_000_000f; // MJ → joules
         sm.Power += sm.Enthalpy * (sm.AbsorbedGas.Temperature - sm.NeutralEnthalpyTemperature); // temperature - room temperature in Kelvin
         if (sm.Power <= 0f)
-            sm.Power = 0;
+            sm.Power = 0f;
         _atmosphereSystem.AddHeat(sm.AbsorbedGas, deltaEnergy);
     }
 
@@ -342,7 +339,7 @@ public sealed partial class SupermatterSystem : SharedSupermatterSystem
 
                 sm.Power -= amount * count;
                 if (sm.Power <= 0f)
-                    sm.Power = 0;
+                    sm.Power = 0f;
                 return;
             }
             //Positive growth
@@ -408,8 +405,7 @@ public sealed partial class SupermatterSystem : SharedSupermatterSystem
 
         if (sm.Activated)
         {
-            // Bias relative to nominal stability so a “perfectly stable” crystal does not out-heal vacuum/power stress each tick.
-            delta += sm.Stability - sm.NeutralStability;
+            delta += sm.Stability;
             delta -= sm.Power / sm.PowerDamageScale;
 
             if (sm.Power > sm.VacuumDamageMinPower)
@@ -473,7 +469,7 @@ public sealed partial class SupermatterSystem : SharedSupermatterSystem
     }
 
     /// <summary>
-    /// TG wiki delamination priority (later wiki list entries beat earlier): cascade &gt; singularity &gt; tesla &gt; default explosion.
+    /// Delamination priority (later wiki list entries beat earlier): cascade &gt; singularity &gt; tesla &gt; default explosion.
     /// </summary>
     public DelamType ChooseDelamType(EntityUid uid, SharedSupermatterComponent sm)
     {
@@ -488,7 +484,7 @@ public sealed partial class SupermatterSystem : SharedSupermatterSystem
         var minNob = _cfg.GetCVar(CCVars.SupermatterCascadeNobMinFraction);
         var cascadeMoles = _cfg.GetCVar(CCVars.SupermatterCascadeMinAbsorbedMoles);
         if (_cfg.GetCVar(CCVars.SupermatterDoCascadeDelam) &&
-            AbsorbedMixQualifiesForWikiResonanceCascade(sm.AbsorbedGas, cascadeMoles, minNob))
+            AbsorbedMixQualifiesForResonanceCascade(sm.AbsorbedGas, cascadeMoles, minNob))
             return DelamType.Cascade;
 
         var singuloNeed = _cfg.GetCVar(CCVars.SupermatterSinguloAbsorbedMolesThreshold) *
@@ -505,9 +501,9 @@ public sealed partial class SupermatterSystem : SharedSupermatterSystem
     }
 
     /// <summary>
-    /// TG wiki resonance cascade: both nob gases above fraction threshold in the absorbed mix, total absorbed moles above minimum.
+    /// Resonance cascade: both nob gases above fraction threshold in the absorbed mix, total absorbed moles above minimum.
     /// </summary>
-    public static bool AbsorbedMixQualifiesForWikiResonanceCascade(GasMixture mix, float minTotalMoles, float minNobFraction)
+    public static bool AbsorbedMixQualifiesForResonanceCascade(GasMixture mix, float minTotalMoles, float minNobFraction)
     {
         var total = mix.TotalMoles;
         if (total < minTotalMoles)
@@ -522,44 +518,6 @@ public sealed partial class SupermatterSystem : SharedSupermatterSystem
     }
 
     /// <summary>
-    /// Integration tests need to set <see cref="SharedSupermatterComponent.Power"/> without tripping Access checks on that component.
-    /// </summary>
-    public void SetPowerForIntegrationTests(EntityUid uid, float power)
-    {
-        var sm = Comp<SharedSupermatterComponent>(uid);
-        sm.Power = power;
-        if (power > 0f)
-            sm.Activated = true;
-    }
-
-    /// <summary>
-    /// Integration tests: wiki “inert until struck” vs powered gas processing.
-    /// </summary>
-    public void SetActivatedForIntegrationTests(EntityUid uid, bool activated)
-    {
-        Comp<SharedSupermatterComponent>(uid).Activated = activated;
-    }
-
-    /// <summary>
-    /// Integration tests: set absorbed gas snapshot for <see cref="ChooseDelamType"/> without running a full atmos tick.
-    /// </summary>
-    public void SetAbsorbedGasForIntegrationTests(EntityUid uid, GasMixture mix)
-    {
-        var sm = Comp<SharedSupermatterComponent>(uid);
-        sm.AbsorbedGas.Clear();
-        _atmosphereSystem.Merge(sm.AbsorbedGas, mix.Clone());
-    }
-
-    /// <summary>
-    /// Integration tests set integrity directly without tripping Access checks.
-    /// </summary>
-    public void SetIntegrityForIntegrationTests(EntityUid uid, float integrity)
-    {
-        var sm = Comp<SharedSupermatterComponent>(uid);
-        sm.Integrity = Math.Clamp(integrity, 0f, sm.MaxIntegrity);
-    }
-
-    /// <summary>
     /// Percent crystal remaining (0–100), for portable test parity with historical damage-based display.
     /// </summary>
     public static float GetIntegrityPercent(SharedSupermatterComponent sm) =>
@@ -567,7 +525,7 @@ public sealed partial class SupermatterSystem : SharedSupermatterSystem
 
     public static float GetIntegrityPercent(float integrity, float maxIntegrity)
     {
-        if (maxIntegrity <= 0)
+        if (maxIntegrity <= 0f)
             return 0f;
         return integrity / maxIntegrity * 100f;
     }
@@ -613,7 +571,7 @@ public sealed partial class SupermatterSystem : SharedSupermatterSystem
     private void ComputeRadiation(SharedSupermatterComponent sm)
     {
         var baseRadiation = sm.BaseRadiation + (sm.Power * sm.PowerPercentage);
-        var stabilityMultiplier = (10f - sm.Stability) / 10f;
+        var stabilityMultiplier = (sm.NeutralStability - sm.Stability) / sm.NeutralStability;
         // Floor so nominal stability still yields measurable output (radiation source + integration tests).
         stabilityMultiplier = MathF.Max(0.05f, stabilityMultiplier);
         sm.CurrentRadiation = baseRadiation * stabilityMultiplier;

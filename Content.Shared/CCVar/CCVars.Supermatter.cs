@@ -39,7 +39,7 @@ public sealed partial class CCVars
         CVarDef.Create("supermatter.tesloose_power_modifier", 1f, CVar.SERVERONLY);
 
     /// <summary>
-    /// TG wiki: resonance cascade when absorbed mix has high Anti-Nob + Hyper-Nob fraction and enough moles.
+    ///  Resonance cascade when absorbed mix has high Anti-Nob + Hyper-Nob fraction and enough moles.
     /// </summary>
     public static readonly CVarDef<bool> SupermatterDoCascadeDelam =
         CVarDef.Create("supermatter.do_cascade_delam", true, CVar.SERVERONLY);
@@ -57,7 +57,7 @@ public sealed partial class CCVars
         CVarDef.Create("supermatter.cascade_nob_min_fraction", 0.4f, CVar.SERVERONLY);
 
     /// <summary>
-    /// TG wiki: singularity delam when absorbed moles exceed this at delamination time.
+    /// Singularity delam when absorbed moles exceed this at delamination time.
     /// </summary>
     public static readonly CVarDef<float> SupermatterSinguloAbsorbedMolesThreshold =
         CVarDef.Create("supermatter.singulo_absorbed_moles_threshold", 1800f, CVar.SERVERONLY);
