@@ -1,11 +1,13 @@
 using Content.Client.Construction;
+using Content.Client._Funkystation.Placement;
 using Content.Shared.Atmos.Components;
-using Content.Shared.Atmos.EntitySystems;
 using Content.Shared.Construction.Prototypes;
+using Content.Shared.Interaction;
 using Robust.Client.GameObjects;
 using Robust.Client.Graphics;
 using Robust.Client.Placement;
 using Robust.Client.Placement.Modes;
+using Robust.Client.Player;
 using Robust.Shared.Enums;
 using Robust.Shared.Map;
 using Robust.Shared.Map.Components;
@@ -27,10 +29,10 @@ public sealed partial class AlignAtmosPipeLayers : SnapgridCenter
     [Dependency] private IEntityManager _entityManager = default!;
     [Dependency] private IPrototypeManager _protoManager = default!;
     [Dependency] private IEyeManager _eyeManager = default!;
+    [Dependency] private IPlayerManager _playerManager = default!;
 
     private readonly SharedMapSystem _mapSystem;
     private readonly SharedTransformSystem _transformSystem;
-    private readonly SharedAtmosPipeLayersSystem _pipeLayersSystem;
     private readonly SpriteSystem _spriteSystem;
     private readonly ConstructionSystem _constructionSystem;
 
@@ -48,9 +50,32 @@ public sealed partial class AlignAtmosPipeLayers : SnapgridCenter
 
         _mapSystem = _entityManager.System<SharedMapSystem>();
         _transformSystem = _entityManager.System<SharedTransformSystem>();
-        _pipeLayersSystem = _entityManager.System<SharedAtmosPipeLayersSystem>();
         _spriteSystem = _entityManager.System<SpriteSystem>();
         _constructionSystem = _entityManager.System<ConstructionSystem>();
+    }
+
+    // funky. mirrors AlignRCDConstruction
+    public override bool IsValidPosition(EntityCoordinates position)
+    {
+        // skip check entirely for editor placement
+        if (pManager.CurrentPermission is not { UseEditorContext: false, Range: > 0 })
+            return base.IsValidPosition(position);
+
+        if (_playerManager.LocalSession?.AttachedEntity is not { } player ||
+            !_entityManager.TryGetComponent<TransformComponent>(player, out var xform))
+        {
+            return false;
+        }
+
+        if (!_transformSystem.InRange(xform.Coordinates, position, SharedInteractionSystem.InteractionRange))
+        {
+            InvalidPlaceColor = InvalidPlaceColor.WithAlpha(0f);
+            return false;
+        }
+
+        InvalidPlaceColor = InvalidPlaceColor.WithAlpha(1f);
+
+        return base.IsValidPosition(position);
     }
 
     /// <inheritdoc/>
@@ -125,56 +150,74 @@ public sealed partial class AlignAtmosPipeLayers : SnapgridCenter
 
     private void UpdateHijackedPlacer(AtmosPipeLayer layer, ScreenCoordinates mouseScreen)
     {
-        // Try to get alternative prototypes from the construction prototype
-        var altPrototypes = (pManager.Hijack as ConstructionPlacementHijack)?.CurrentPrototype?.AlternativePrototypes;
-
-        if (altPrototypes == null || (int)layer >= altPrototypes.Length)
+        // funky. generalized from a hardcoded ConstructionPlacementHijack cast so other hijacks can also get mouse position for layers
+        if (pManager.Hijack is not IAtmosPipeLayerHijack hijack)
             return;
 
+        // Determine the current entity prototype to be constructed
+        if (string.IsNullOrEmpty(hijack?.CurrentPrototype?.ID)
+            || !_protoManager.Resolve(hijack.CurrentPrototype.ID, out var currentPrototype))
+            return;
+
+        // The prototype must be part of a variant collection
+        if (!_protoManager.TryGetVariantCollection<EntityPrototype>(currentPrototype, out var altPrototypes))
+            return;
+
+        // The target layer must be a valid index in the variant collection
+        if ((int)layer >= altPrototypes.Count)
+            return;
+
+        // Get the entity prototype ID for the target layer
         var newProtoId = altPrototypes[(int)layer];
 
-        if (!_protoManager.Resolve(newProtoId, out var newProto))
+        // Find a construction prototype with a matching name
+        if (!_protoManager.Resolve<ConstructionPrototype>(newProtoId.Id, out var newConstructionPrototype))
             return;
 
-        if (newProto.Type != ConstructionType.Structure)
-        {
-            pManager.Clear();
+        // The new construction prototype must differ from the last
+        if (newConstructionPrototype.Equals(hijack.CurrentPrototype)) // funky (simplified this)
             return;
-        }
 
-        if (newProto.ID == (pManager.Hijack as ConstructionPlacementHijack)?.CurrentPrototype?.ID)
-            return;
+        var current = pManager.CurrentPermission; // funky
 
         // Start placing
         pManager.BeginPlacing(new PlacementInformation()
         {
             IsTile = false,
-            PlacementOption = newProto.PlacementMode,
-        }, new ConstructionPlacementHijack(newProto));
+            PlacementOption = newConstructionPrototype.PlacementMode,
+            Range = current?.Range ?? 0, // funky
+            UseEditorContext = current?.UseEditorContext ?? true, // funky
+        },
+        hijack.WithPrototype(newConstructionPrototype));
 
         if (pManager.CurrentMode is AlignAtmosPipeLayers { } newMode)
             newMode.RefreshGrid(mouseScreen);
 
         // Update construction guide
-        _constructionSystem.GetGuide(newProto);
+        _constructionSystem.GetGuide(newConstructionPrototype);
     }
 
     private void UpdatePlacer(AtmosPipeLayer layer)
     {
-        // Try to get alternative prototypes from the entity atmos pipe layer component
         if (pManager.CurrentPermission?.EntityType == null)
             return;
 
-        if (!_protoManager.TryIndex<EntityPrototype>(pManager.CurrentPermission.EntityType, out var currentProto))
+        // Determine the current entity prototype to be placed
+        if (!_protoManager.Resolve<EntityPrototype>(pManager.CurrentPermission.EntityType, out var currentPrototype))
             return;
 
-        if (!currentProto.TryComp<AtmosPipeLayersComponent>(out var atmosPipeLayers, _entityManager.ComponentFactory))
+        // The prototype must be part of a variant collection
+        if (!_protoManager.TryGetVariantCollection<EntityPrototype>(currentPrototype, out var altPrototypes))
             return;
 
-        if (!_pipeLayersSystem.TryGetAlternativePrototype(atmosPipeLayers, layer, out var newProtoId))
+        // The target layer must be a valid index in the variant collection
+        if ((int)layer >= altPrototypes.Count)
             return;
 
-        if (_protoManager.TryIndex<EntityPrototype>(newProtoId, out var newProto))
+        // Get the entity prototype ID for the target layer
+        var newProtoId = altPrototypes[(int)layer];
+
+        if (_protoManager.Resolve(newProtoId, out var newProto))
         {
             // Update the placed prototype
             pManager.CurrentPermission.EntityType = newProtoId;

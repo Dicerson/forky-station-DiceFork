@@ -17,13 +17,14 @@ using Content.Server.Shuttles.Components;
 using Content.Server.Shuttles.Events;
 using Content.Server.Station.Events;
 using Content.Server.Station.Systems;
+using Content.Shared._Funkystation.CCVar;
 using Content.Shared.Access.Systems;
 using Content.Shared.CCVar;
 using Content.Shared.Database;
-using Content.Shared.DeviceNetwork;
 using Content.Shared.DeviceNetwork.Components;
 using Content.Shared.GameTicking;
 using Content.Shared.Localizations;
+using Content.Shared.RoundEnd;
 using Content.Shared.Shuttles.Components;
 using Content.Shared.Shuttles.Events;
 using Content.Shared.Shuttles.Systems;
@@ -31,6 +32,7 @@ using Content.Shared.Tag;
 using Content.Shared.Tiles;
 using Robust.Server.GameObjects;
 using Robust.Shared.Audio.Systems;
+using Robust.Shared.Configuration;
 using Robust.Shared.EntitySerialization.Systems;
 using Robust.Shared.Map.Components;
 using Robust.Shared.Player;
@@ -68,6 +70,7 @@ public sealed partial class EmergencyShuttleSystem : SharedEmergencyShuttleSyste
     [Dependency] private StationSystem _station = default!;
     [Dependency] private TransformSystem _transformSystem = default!;
     [Dependency] private UserInterfaceSystem _uiSystem = default!;
+    [Dependency] private IConfigurationManager _cfg = null!; // funky - pa announcements cvar
     [Dependency] private AnnouncerManager _announcer = default!; // Macrocosm edit
 
     private const float ShuttleSpawnBuffer = 1f;
@@ -212,16 +215,16 @@ public sealed partial class EmergencyShuttleSystem : SharedEmergencyShuttleSyste
 
         if (TryComp<DeviceNetworkComponent>(uid, out var netComp))
         {
-            var payload = new NetworkPayload
+            var payload = new ScreenShuttlePayload
             {
-                [ShuttleTimerMasks.ShuttleMap] = uid,
-                [ShuttleTimerMasks.SourceMap] = args.FromMapUid,
-                [ShuttleTimerMasks.DestMap] = _transformSystem.GetMap(args.TargetCoordinates),
-                [ShuttleTimerMasks.ShuttleTime] = ftlTime,
-                [ShuttleTimerMasks.SourceTime] = ftlTime,
-                [ShuttleTimerMasks.DestTime] = ftlTime
+                Shuttle = uid,
+                SourceMap = args.FromMapUid,
+                DestinationMap = _transformSystem.GetMap(args.TargetCoordinates),
+                ShuttleTime = ftlTime,
+                SourceTime = ftlTime,
+                DestinationTime = ftlTime,
             };
-            _deviceNetworkSystem.QueuePacket(uid, null, payload, netComp.TransmitFrequency);
+            _deviceNetworkSystem.SendPacket(uid, null, ref payload, netComp.TransmitFrequency);
         }
     }
 
@@ -234,27 +237,27 @@ public sealed partial class EmergencyShuttleSystem : SharedEmergencyShuttleSyste
         var shuttle = args.Entity;
         if (TryComp<DeviceNetworkComponent>(shuttle, out var net))
         {
-            var payload = new NetworkPayload
+            var payload = new ScreenShuttlePayload
             {
-                [ShuttleTimerMasks.ShuttleMap] = shuttle,
-                [ShuttleTimerMasks.SourceMap] = _roundEnd.GetCentcomm(),
-                [ShuttleTimerMasks.DestMap] = _roundEnd.GetStation(),
-                [ShuttleTimerMasks.ShuttleTime] = countdownTime,
-                [ShuttleTimerMasks.SourceTime] = countdownTime,
-                [ShuttleTimerMasks.DestTime] = countdownTime,
+                Shuttle = shuttle,
+                SourceMap = _roundEnd.GetCentcomm(),
+                DestinationMap = _roundEnd.GetStation(),
+                ShuttleTime = countdownTime,
+                SourceTime = countdownTime,
+                DestinationTime = countdownTime,
             };
 
             // by popular request
             // https://discord.com/channels/310555209753690112/770682801607278632/1189989482234126356
             if (_random.Next(1000) == 0)
             {
-                payload.Add(ScreenMasks.Text, ShuttleTimerMasks.Kill);
-                payload.Add(ScreenMasks.Color, Color.Red);
+                payload.OverrideText = ShuttleTimerMasks.Kill;
+                payload.OverrideColor = Color.Red;
             }
             else
-                payload.Add(ScreenMasks.Text, ShuttleTimerMasks.Bye);
+                payload.OverrideText = ShuttleTimerMasks.Bye;
 
-            _deviceNetworkSystem.QueuePacket(shuttle, null, payload, net.TransmitFrequency);
+            _deviceNetworkSystem.SendPacket(shuttle, null, ref payload, net.TransmitFrequency);
         }
     }
 
@@ -332,18 +335,28 @@ public sealed partial class EmergencyShuttleSystem : SharedEmergencyShuttleSyste
 
         DebugTools.Assert(shuttle != null);
 
+        // BEGIN Funky
+        var paExclusive = PAAnnouncementCVars.IsPAEnabledAndExclusive(_cfg); // funky
+
         if (result.ResultType == ShuttleDockResultType.GoodLuck)
         {
+            // funky - getting this earlier so it can be passed into the announcement
+            _announcer.TryGetAnnouncerSound(stationShuttleComp.FailureAudio, out var sound);
+
             _chatSystem.DispatchStationAnnouncement(
                 result.Station,
                 Loc.GetString(stationShuttleComp.FailureAnnouncement),
-                playDefaultSound: false);
+                sender: Loc.GetString("chat-manager-sender-sistr"), // funky
+                playDefaultSound: paExclusive,
+                announcementSound: paExclusive ? sound : null, // funky
+                colorOverride: Color.FromHex("#f9a524")); // funky
 
             // TODO: Need filter extensions or something don't blame me.
             // Macrocosm edit start - announcer variation
-            _announcer.TryGetAnnouncerSound(stationShuttleComp.FailureAudio, out var sound);
-            _audio.PlayGlobal(sound, Filter.Broadcast(), true);
+            if (!paExclusive) // funky
+                _audio.PlayGlobal(sound, Filter.Broadcast(), true);
             // Macrocosm edit end
+            // END Funky
             return;
         }
 
@@ -367,6 +380,15 @@ public sealed partial class EmergencyShuttleSystem : SharedEmergencyShuttleSyste
             ? stationShuttleComp.NearbyAnnouncement
             : stationShuttleComp.DockedAnnouncement;
 
+        // Macrocosm edit start - announcer variation
+        // Funky - getting this earlier so it can be passed into the announcement
+        var audioId = result.ResultType == ShuttleDockResultType.NoDock
+            ? stationShuttleComp.NearbyAudio
+            : stationShuttleComp.DockedAudio;
+
+        _announcer.TryGetAnnouncerSound(audioId, out var audio);
+
+
         _chatSystem.DispatchStationAnnouncement(
             result.Station,
             Loc.GetString(
@@ -375,37 +397,35 @@ public sealed partial class EmergencyShuttleSystem : SharedEmergencyShuttleSyste
                 ("direction", direction),
                 ("location", location),
                 ("extended", extendedText)),
-            playDefaultSound: false);
+            sender: Loc.GetString("chat-manager-sender-sistr"), // funky
+            playDefaultSound: paExclusive, // funky
+            announcementSound: audio, // funky
+            colorOverride: Color.FromHex("#f9a524")); // funky
+        // Macrocosm edit end
 
         // Trigger shuttle timers on the shuttle.
 
         var time = TimeSpan.FromSeconds(_consoleAccumulator);
         if (TryComp<DeviceNetworkComponent>(shuttle, out var netComp))
         {
-            var payload = new NetworkPayload
+            var payload = new ScreenShuttlePayload
             {
-                [ShuttleTimerMasks.ShuttleMap] = shuttle,
-                [ShuttleTimerMasks.SourceMap] = targetXform.MapUid,
-                [ShuttleTimerMasks.DestMap] = _roundEnd.GetCentcomm(),
-                [ShuttleTimerMasks.ShuttleTime] = time,
-                [ShuttleTimerMasks.SourceTime] = time,
-                [ShuttleTimerMasks.DestTime] = time + TimeSpan.FromSeconds(TransitTime),
-                [ShuttleTimerMasks.Docked] = true,
+                Shuttle = shuttle,
+                SourceMap = targetXform.MapUid,
+                DestinationMap = _roundEnd.GetCentcomm(),
+                ShuttleTime = time,
+                SourceTime = time,
+                DestinationTime = time + TimeSpan.FromSeconds(TransitTime),
+                Docked = true,
             };
-            _deviceNetworkSystem.QueuePacket(shuttle.Value, null, payload, netComp.TransmitFrequency);
+            _deviceNetworkSystem.SendPacket(shuttle.Value, null, ref payload, netComp.TransmitFrequency);
         }
 
         // Play announcement audio.
 
-        // Macrocosm edit start - announcer variation
-        var audioId = result.ResultType == ShuttleDockResultType.NoDock
-            ? stationShuttleComp.NearbyAudio
-            : stationShuttleComp.DockedAudio;
-
         // TODO: Need filter extensions or something don't blame me.
-        _announcer.TryGetAnnouncerSound(audioId, out var audio);
-        _audio.PlayGlobal(audio, Filter.Broadcast(), true);
-        // Macrocosm edit end
+        if (!paExclusive) // funky
+            _audio.PlayGlobal(audio, Filter.Broadcast(), true);
     }
 
     private void OnStationInit(EntityUid uid, StationCentcommComponent component, MapInitEvent args)

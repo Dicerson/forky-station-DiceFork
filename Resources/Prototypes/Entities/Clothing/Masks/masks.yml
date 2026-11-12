@@ -152,6 +152,15 @@
 
 - type: entity
   parent: ClothingMaskBreathMedical
+  id: ClothingMaskBreathMedicalBed
+  suffix: Unremovable
+  description: A close-fitting sterile mask that can be connected to an air supply. This one is attached to the medical bed's internals system.
+  components:
+  - type: Unremoveable
+    deleteOnDrop: true
+
+- type: entity
+  parent: ClothingMaskBreathMedical
   id: ClothingMaskBreathMedicalSecurity
   name: military-style medical mask
   description: A medical mask with a small layer of protection against damage and viruses, similar to the one used in the medical units of the first corporate war.
@@ -736,7 +745,7 @@
   - type: IdentityBlocker
 
 - type: entity
-  parent: ClothingMaskGas
+  parent: [ClothingMaskGas, WeldingMaskBase]
   id: ClothingMaskWeldingGas
   name: welding gas mask
   description: A gas mask with built in welding goggles and face shield. Looks like a skull, clearly designed by a nerd.
@@ -759,6 +768,9 @@
   - type: Tag
     tags:
     - WhitelistChameleon
+  - type: ImageOverlay
+    pathToOverlayImage: "/Textures/Clothing/Head/Welding/weldingTexture.png"
+    additionalColorOverlay: "#00000050"
 
 # Entity tables
 - type: entityTable

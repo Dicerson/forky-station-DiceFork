@@ -28,6 +28,7 @@
       - WeldingMask
       - RemoteSignaller
       - UtilityKnife
+      - ConstructionChalk # Funky
       components:
       - StationMap
       - SprayPainter
@@ -423,9 +424,9 @@
       - MagazinePistol
       - MagazineMagnum
       - CombatKnife
-      - Truncheon
       - HandGrenade
       - Stunbaton
+      - Nightstick # Funky
       components:
       - FlashOnTrigger
       - SmokeOnTrigger
